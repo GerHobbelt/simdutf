@@ -2110,7 +2110,7 @@ implementation, and selects one as the default:
 #include <iostream>
 #include <string>
 
-int main() {
+int main(void) {
   // This is just a demonstration, not actual testing required.
   std::string source = "La vie est belle.";
   std::string chosen_implementation;

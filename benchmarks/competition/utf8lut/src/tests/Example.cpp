@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <memory>
 
-int main() {
+int main(void) {
     std::unique_ptr<BaseBufferProcessor> processor(ProcessorSelector<dfUtf8, dfUtf16>::WithOptions<>::Create());
     ConversionResult res = ConvertFile(*processor, "input.utf8", "output.utf16");
     if (res.status == csSuccess) printf("File converted successfully\n");

@@ -4,7 +4,7 @@
 #include <cstdio>
 #include <string>
 
-int main() {
+int main(void) {
   // This is just a demonstration, not actual testing required.
   std::string source = "La vie est belle.";
   std::string chosen_implementation;

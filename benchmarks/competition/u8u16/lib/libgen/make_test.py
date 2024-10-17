@@ -249,7 +249,7 @@ def gen_operand_sequence(fw):
 def generate_and_write_versions(filename, ops,fws):
     test_list = r"""#include <stdio.h>
 #include "%s.h"
-int main() {
+int main(void) {
         SIMD_type a, b,test_rslt;
 """
     test_list = test_list % filename
