@@ -15,6 +15,28 @@ using simdutf::tests::helpers::transcode_utf32_to_utf16_test_base;
 constexpr int trials = 1000;
 } // namespace
 
+TEST(issue_convert_utf32_to_utf16be_with_errors_fb5c30a7d5815504) {
+  const char32_t data[] = {0x001000ef, 0x335e0200};
+  constexpr std::size_t data_len = 2;
+  const auto validation1 =
+      implementation.validate_utf32_with_errors(data, data_len);
+  ASSERT_EQUAL(validation1.count, 1);
+  ASSERT_EQUAL(validation1.error, simdutf::error_code::TOO_LARGE);
+
+  const bool validation2 =
+      implementation.validate_utf32((const char32_t *)data, data_len);
+  ASSERT_EQUAL(validation1.error == simdutf::error_code::SUCCESS, validation2);
+
+  const auto outlen =
+      implementation.utf16_length_from_utf32((const char32_t *)data, data_len);
+  ASSERT_EQUAL(outlen, 4);
+  std::vector<char16_t> output(outlen);
+  const auto r = implementation.convert_utf32_to_utf16be_with_errors(
+      (const char32_t *)data, data_len, output.data());
+  ASSERT_EQUAL(r.error, simdutf::error_code::TOO_LARGE);
+  ASSERT_EQUAL(r.count, 1);
+}
+
 TEST_LOOP(trials, convert_into_2_UTF16_bytes) {
   // range for 2 UTF-16 bytes
   simdutf::tests::helpers::RandomIntRanges random(

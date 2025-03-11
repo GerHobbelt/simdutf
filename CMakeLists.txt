@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.15)
 project(simdutf
   DESCRIPTION "Fast Unicode validation, transcoding and processing"
   LANGUAGES CXX
-  VERSION 6.1.0
+  VERSION 6.2.0
 )
 
 include (TestBigEndian)
@@ -23,8 +23,8 @@ include(GNUInstallDirs)
 include(CTest)
 include(cmake/simdutf-flags.cmake)
 
-set(SIMDUTF_LIB_VERSION "15.0.0" CACHE STRING "simdutf library version")
-set(SIMDUTF_LIB_SOVERSION "15" CACHE STRING "simdutf library soversion")
+set(SIMDUTF_LIB_VERSION "16.0.0" CACHE STRING "simdutf library version")
+set(SIMDUTF_LIB_SOVERSION "16" CACHE STRING "simdutf library soversion")
 option(SIMDUTF_TESTS "Whether the tests are included as part of the CMake Build." ON)
 option(SIMDUTF_BENCHMARKS "Whether the benchmarks are included as part of the CMake Build." OFF)
 option(SIMDUTF_TOOLS "Whether the tools are included as part of the CMake build. Requires C++17 or better." ON)
@@ -57,7 +57,7 @@ endif()
 if (SIMDUTF_BENCHMARKS)
   if(NOT SIMDUTF_TESTS)
     message(STATUS "You have enabled the benchmarks, but not the tests. We don't allow running the benchmarks without the tests.")
-  elif((CMAKE_CXX_COMPILER_ID MATCHES GNU) AND (CMAKE_CXX_COMPILER_VERSION VERSION_LESS "8.0"))
+  elseif((CMAKE_CXX_COMPILER_ID MATCHES GNU) AND (CMAKE_CXX_COMPILER_VERSION VERSION_LESS "8.0"))
     message(STATUS "The benchmark tool requires GCC 8.0 or better.")
   else()
     message(STATUS "The benchmarks can be disabled by setting SIMDUTF_BENCHMARKS, e.g., -D SIMDUTF_BENCHMARKS=OFF.")

@@ -12,21 +12,6 @@ simdutf_really_inline bool is_ascii(const simd8x64<uint8_t> &input) {
   return input.reduce_or().saturating_sub(0b01111111u).bits_not_set_anywhere();
 }
 
-simdutf_unused simdutf_really_inline simd8<bool>
-must_be_continuation(const simd8<uint8_t> prev1, const simd8<uint8_t> prev2,
-                     const simd8<uint8_t> prev3) {
-  simd8<uint8_t> is_second_byte =
-      prev1.saturating_sub(0b11000000u - 1); // Only 11______ will be > 0
-  simd8<uint8_t> is_third_byte =
-      prev2.saturating_sub(0b11100000u - 1); // Only 111_____ will be > 0
-  simd8<uint8_t> is_fourth_byte =
-      prev3.saturating_sub(0b11110000u - 1); // Only 1111____ will be > 0
-  // Caller requires a bool (all 1's). All values resulting from the subtraction
-  // will be <= 64, so signed comparison is fine.
-  return simd8<int8_t>(is_second_byte | is_third_byte | is_fourth_byte) >
-         int8_t(0);
-}
-
 simdutf_really_inline simd8<bool>
 must_be_2_3_continuation(const simd8<uint8_t> prev2,
                          const simd8<uint8_t> prev3) {
@@ -380,11 +365,6 @@ simdutf_warn_unused size_t implementation::utf32_length_from_utf8(
   return scalar::utf8::count_code_points(input, length);
 }
 
-simdutf_warn_unused size_t implementation::maximal_binary_length_from_base64(
-    const char *input, size_t length) const noexcept {
-  return scalar::base64::maximal_binary_length_from_base64(input, length);
-}
-
 simdutf_warn_unused result implementation::base64_to_binary(
     const char *input, size_t length, char *output, base64_options options,
     last_chunk_handling_options last_chunk_options) const noexcept {
@@ -437,11 +417,6 @@ simdutf_warn_unused result implementation::base64_to_binary(
   return r;
 }
 
-simdutf_warn_unused size_t implementation::maximal_binary_length_from_base64(
-    const char16_t *input, size_t length) const noexcept {
-  return scalar::base64::maximal_binary_length_from_base64(input, length);
-}
-
 simdutf_warn_unused result implementation::base64_to_binary(
     const char16_t *input, size_t length, char *output, base64_options options,
     last_chunk_handling_options last_chunk_options) const noexcept {
@@ -492,11 +467,6 @@ simdutf_warn_unused result implementation::base64_to_binary(
     }
   }
   return r;
-}
-
-simdutf_warn_unused size_t implementation::base64_length_from_binary(
-    size_t length, base64_options options) const noexcept {
-  return scalar::base64::base64_length_from_binary(length, options);
 }
 
 size_t implementation::binary_to_base64(const char *input, size_t length,

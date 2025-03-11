@@ -9,6 +9,8 @@ namespace {
 #ifndef SIMDUTF_ICELAKE_H
   #error "icelake.h must be included"
 #endif
+using namespace simd;
+
 #include "icelake/icelake_macros.inl.cpp"
 #include "icelake/icelake_common.inl.cpp"
 #if SIMDUTF_FEATURE_UTF8
@@ -80,6 +82,10 @@ namespace {
 } // namespace
 } // namespace SIMDUTF_IMPLEMENTATION
 } // namespace simdutf
+
+#if SIMDUTF_FEATURE_UTF8 && SIMDUTF_FEATURE_UTF32
+  #include "generic/utf32.h"
+#endif // SIMDUTF_FEATURE_UTF8 && SIMDUTF_FEATURE_UTF32
 
 namespace simdutf {
 namespace SIMDUTF_IMPLEMENTATION {
@@ -1046,16 +1052,8 @@ simdutf_warn_unused result implementation::convert_utf32_to_utf16le_with_errors(
   std::pair<result, char16_t *> ret =
       avx512_convert_utf32_to_utf16_with_errors<endianness::LITTLE>(
           buf, len, utf16_output);
-  if (ret.first.count != len) {
-    result scalar_res =
-        scalar::utf32_to_utf16::convert_with_errors<endianness::LITTLE>(
-            buf + ret.first.count, len - ret.first.count, ret.second);
-    if (scalar_res.error) {
-      scalar_res.count += ret.first.count;
-      return scalar_res;
-    } else {
-      ret.second += scalar_res.count;
-    }
+  if (ret.first.error) {
+    return ret.first;
   }
   ret.first.count =
       ret.second -
@@ -1070,16 +1068,8 @@ simdutf_warn_unused result implementation::convert_utf32_to_utf16be_with_errors(
   std::pair<result, char16_t *> ret =
       avx512_convert_utf32_to_utf16_with_errors<endianness::BIG>(buf, len,
                                                                  utf16_output);
-  if (ret.first.count != len) {
-    result scalar_res =
-        scalar::utf32_to_utf16::convert_with_errors<endianness::BIG>(
-            buf + ret.first.count, len - ret.first.count, ret.second);
-    if (scalar_res.error) {
-      scalar_res.count += ret.first.count;
-      return scalar_res;
-    } else {
-      ret.second += scalar_res.count;
-    }
+  if (ret.first.error) {
+    return ret.first;
   }
   ret.first.count =
       ret.second -
@@ -1583,38 +1573,7 @@ simdutf_warn_unused size_t implementation::utf16_length_from_utf8(
 #if SIMDUTF_FEATURE_UTF8 && SIMDUTF_FEATURE_UTF32
 simdutf_warn_unused size_t implementation::utf8_length_from_utf32(
     const char32_t *input, size_t length) const noexcept {
-  const char32_t *ptr = input;
-  size_t count{0};
-
-  if (length >= 16) {
-    const char32_t *end = input + length - 16;
-
-    const __m512i v_0000_007f = _mm512_set1_epi32((uint32_t)0x7f);
-    const __m512i v_0000_07ff = _mm512_set1_epi32((uint32_t)0x7ff);
-    const __m512i v_0000_ffff = _mm512_set1_epi32((uint32_t)0x0000ffff);
-
-    while (ptr <= end) {
-      __m512i utf32 = _mm512_loadu_si512((const __m512i *)ptr);
-      ptr += 16;
-      __mmask16 ascii_bitmask = _mm512_cmple_epu32_mask(utf32, v_0000_007f);
-      __mmask16 two_bytes_bitmask = _mm512_mask_cmple_epu32_mask(
-          _knot_mask16(ascii_bitmask), utf32, v_0000_07ff);
-      __mmask16 three_bytes_bitmask = _mm512_mask_cmple_epu32_mask(
-          _knot_mask16(_mm512_kor(ascii_bitmask, two_bytes_bitmask)), utf32,
-          v_0000_ffff);
-
-      size_t ascii_count = count_ones(ascii_bitmask);
-      size_t two_bytes_count = count_ones(two_bytes_bitmask);
-      size_t three_bytes_count = count_ones(three_bytes_bitmask);
-      size_t four_bytes_count =
-          16 - ascii_count - two_bytes_count - three_bytes_count;
-      count += ascii_count + 2 * two_bytes_count + 3 * three_bytes_count +
-               4 * four_bytes_count;
-    }
-  }
-
-  return count +
-         scalar::utf32::utf8_length_from_utf32(ptr, length - (ptr - input));
+  return utf32::utf8_length_from_utf32(input, length);
 }
 #endif // SIMDUTF_FEATURE_UTF8 && SIMDUTF_FEATURE_UTF32
 
@@ -1652,11 +1611,6 @@ simdutf_warn_unused size_t implementation::utf32_length_from_utf8(
 #endif // SIMDUTF_FEATURE_UTF8 && SIMDUTF_FEATURE_UTF32
 
 #if SIMDUTF_FEATURE_BASE64
-simdutf_warn_unused size_t implementation::maximal_binary_length_from_base64(
-    const char *input, size_t length) const noexcept {
-  return scalar::base64::maximal_binary_length_from_base64(input, length);
-}
-
 simdutf_warn_unused result implementation::base64_to_binary(
     const char *input, size_t length, char *output, base64_options options,
     last_chunk_handling_options last_chunk_options) const noexcept {
@@ -1701,11 +1655,6 @@ simdutf_warn_unused full_result implementation::base64_to_binary_details(
   }
 }
 
-simdutf_warn_unused size_t implementation::maximal_binary_length_from_base64(
-    const char16_t *input, size_t length) const noexcept {
-  return scalar::base64::maximal_binary_length_from_base64(input, length);
-}
-
 simdutf_warn_unused result implementation::base64_to_binary(
     const char16_t *input, size_t length, char *output, base64_options options,
     last_chunk_handling_options last_chunk_options) const noexcept {
@@ -1748,11 +1697,6 @@ simdutf_warn_unused full_result implementation::base64_to_binary_details(
                                                   options, last_chunk_options);
     }
   }
-}
-
-simdutf_warn_unused size_t implementation::base64_length_from_binary(
-    size_t length, base64_options options) const noexcept {
-  return scalar::base64::base64_length_from_binary(length, options);
 }
 
 size_t implementation::binary_to_base64(const char *input, size_t length,

@@ -151,7 +151,7 @@ Linux or macOS users might follow the following instructions if they have a rece
 
 1. Pull the library in a directory
    ```
-   wget https://github.com/simdutf/simdutf/releases/download/v6.1.0/singleheader.zip
+   wget https://github.com/simdutf/simdutf/releases/download/v6.2.0/singleheader.zip
    unzip singleheader.zip
    ```
    You can replace `wget` by `curl -OL https://...` if you prefer.
@@ -222,7 +222,7 @@ Single-header version
 You can create a single-header version of the library where
 all of the code is put into two files (`simdutf.h` and `simdutf.cpp`).
 We publish a zip archive containing these files, e.g., see
-https://github.com/simdutf/simdutf/releases/download/v6.1.0/singleheader.zip
+https://github.com/simdutf/simdutf/releases/download/v6.2.0/singleheader.zip
 
 You may generate it on your own using a Python script.
 
@@ -765,6 +765,14 @@ simdutf_warn_unused size_t utf8_length_from_latin1(const char * input, size_t le
  */
 simdutf_warn_unused size_t latin1_length_from_utf8(const char * input, size_t length) noexcept;
 
+/**
+ * Compute the number of bytes that this UTF-16 string would require in Latin1 format.
+ *
+ * @param length        the length of the string in Latin1 code units (char)
+ * @return the length of the string in Latin1 code units (char) required to encode the UTF-16 string as Latin1
+ */
+simdutf_warn_unused size_t latin1_length_from_utf16(size_t length) noexcept;
+
 /*
  * Compute the number of bytes that this UTF-16LE/BE string would require in Latin1 format.
  *
@@ -882,6 +890,14 @@ simdutf_warn_unused size_t utf8_length_from_utf32(const char32_t * input, size_t
 simdutf_warn_unused size_t utf16_length_from_utf32(const char32_t * input, size_t length) noexcept;
 
 /**
+ * Compute the number of code units that this Latin1 string would require in UTF-16 format.
+ *
+ * @param length        the length of the string in Latin1 code units (char)
+ * @return the length of the string in 2-byte code units (char16_t) required to encode the Latin1 string as UTF-16
+ */
+simdutf_warn_unused size_t utf16_length_from_latin1(size_t length) noexcept;
+
+/**
  * Using native endianness; Compute the number of bytes that this UTF-16
  * string would require in UTF-32 format.
  *
@@ -929,6 +945,14 @@ simdutf_warn_unused size_t utf32_length_from_utf16le(const char16_t * input, siz
  * @return the number of bytes required to encode the UTF-16BE string as UTF-32
  */
 simdutf_warn_unused size_t utf32_length_from_utf16be(const char16_t * input, size_t length) noexcept;
+
+/**
+ * Compute the number of bytes that this Latin1 string would require in UTF-32 format.
+ *
+ * @param length        the length of the string in Latin1 code units (char)
+ * @return the length of the string in 4-byte code units (char32_t) required to encode the Latin1 string as UTF-32
+ */
+simdutf_warn_unused size_t utf32_length_from_latin1(size_t length) noexcept;
 ```
 
 
@@ -1712,7 +1736,7 @@ If you have a UTF-16 input, you may change its endianness with a fast function.
  *
  * @param input         the UTF-16 string to process
  * @param length        the length of the string in 2-byte code units (char16_t)
- * @param output        the pointer to buffer that can hold the conversion result
+ * @param output        the pointer to a buffer that can hold the conversion result
  */
 void change_endianness_utf16(const char16_t * input, size_t length, char16_t * output) noexcept;
 
@@ -2025,7 +2049,7 @@ simdutf_warn_unused size_t maximal_binary_length_from_base64(const char16_t * in
  *
  * @param input         the base64 string to process
  * @param length        the length of the string in bytes
- * @param output        the pointer to buffer that can hold the conversion
+ * @param output        the pointer to a buffer that can hold the conversion
  * result (should be at least maximal_binary_length_from_base64(input, length)
  * bytes long).
  * @param options       the base64 options to use, usually base64_default or
@@ -2066,7 +2090,7 @@ simdutf_warn_unused size_t base64_length_from_binary(size_t length, base64_optio
  *
  * @param input         the binary to process
  * @param length        the length of the input in bytes
- * @param output        the pointer to buffer that can hold the conversion result (should be at least base64_length_from_binary(length) bytes long)
+ * @param output        the pointer to a buffer that can hold the conversion result (should be at least base64_length_from_binary(length) bytes long)
  * @param options       the base64 options to use, can be base64_default or base64_url, is base64_default by default.
  * @return number of written bytes, will be equal to base64_length_from_binary(length, options)
  */
@@ -2102,7 +2126,7 @@ size_t binary_to_base64(const char * input, size_t length, char* output, base64_
  *
  * @param input         the base64 string to process, in ASCII stored as 16-bit units
  * @param length        the length of the string in 16-bit units
- * @param output        the pointer to buffer that can hold the conversion result (should be at least maximal_binary_length_from_base64(input, length) bytes long).
+ * @param output        the pointer to a buffer that can hold the conversion result (should be at least maximal_binary_length_from_base64(input, length) bytes long).
  * @param options       the base64 options to use, can be base64_default or base64_url, is base64_default by default.
  * @param last_chunk_options the last chunk handling options,
  * last_chunk_handling_options::loose by default
@@ -2159,7 +2183,7 @@ simdutf_warn_unused result base64_to_binary(const char16_t * input, size_t lengt
  * @param input         the base64 string to process, in ASCII stored as 8-bit
  * or 16-bit units
  * @param length        the length of the string in 8-bit or 16-bit units.
- * @param output        the pointer to buffer that can hold the conversion
+ * @param output        the pointer to a buffer that can hold the conversion
  * result.
  * @param outlen        the number of bytes that can be written in the output
  * buffer. Upon return, it is modified to reflect how many bytes were written.

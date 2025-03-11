@@ -18,21 +18,6 @@ simdutf_really_inline bool is_ascii(const simd8x64<uint8_t> &input) {
        // SIMDUTF_FEATURE_UTF8
 
 #if SIMDUTF_FEATURE_UTF8 || SIMDUTF_FEATURE_DETECT_ENCODING
-simdutf_unused simdutf_really_inline simd8<bool>
-must_be_continuation(const simd8<uint8_t> prev1, const simd8<uint8_t> prev2,
-                     const simd8<uint8_t> prev3) {
-  simd8<bool> is_second_byte = prev1 >= uint8_t(0b11000000u);
-  simd8<bool> is_third_byte = prev2 >= uint8_t(0b11100000u);
-  simd8<bool> is_fourth_byte = prev3 >= uint8_t(0b11110000u);
-  // Use ^ instead of | for is_*_byte, because ^ is commutative, and the caller
-  // is using ^ as well. This will work fine because we only have to report
-  // errors for cases with 0-1 lead bytes. Multiple lead bytes implies 2
-  // overlapping multibyte characters, and if that happens, there is guaranteed
-  // to be at least *one* lead byte that is part of only 1 other multibyte
-  // character. The error will be detected there.
-  return is_second_byte ^ is_third_byte ^ is_fourth_byte;
-}
-
 simdutf_really_inline simd8<bool>
 must_be_2_3_continuation(const simd8<uint8_t> prev2,
                          const simd8<uint8_t> prev3) {
@@ -1218,11 +1203,6 @@ simdutf_warn_unused size_t implementation::utf32_length_from_utf8(
 #endif // SIMDUTF_FEATURE_UTF8 && SIMDUTF_FEATURE_UTF32
 
 #if SIMDUTF_FEATURE_BASE64
-simdutf_warn_unused size_t implementation::maximal_binary_length_from_base64(
-    const char *input, size_t length) const noexcept {
-  return scalar::base64::maximal_binary_length_from_base64(input, length);
-}
-
 simdutf_warn_unused result implementation::base64_to_binary(
     const char *input, size_t length, char *output, base64_options options,
     last_chunk_handling_options last_chunk_options) const noexcept {
@@ -1267,11 +1247,6 @@ simdutf_warn_unused full_result implementation::base64_to_binary_details(
   }
 }
 
-simdutf_warn_unused size_t implementation::maximal_binary_length_from_base64(
-    const char16_t *input, size_t length) const noexcept {
-  return scalar::base64::maximal_binary_length_from_base64(input, length);
-}
-
 simdutf_warn_unused result implementation::base64_to_binary(
     const char16_t *input, size_t length, char *output, base64_options options,
     last_chunk_handling_options last_chunk_options) const noexcept {
@@ -1314,11 +1289,6 @@ simdutf_warn_unused full_result implementation::base64_to_binary_details(
                                                   options, last_chunk_options);
     }
   }
-}
-
-simdutf_warn_unused size_t implementation::base64_length_from_binary(
-    size_t length, base64_options options) const noexcept {
-  return scalar::base64::base64_length_from_binary(length, options);
 }
 
 size_t implementation::binary_to_base64(const char *input, size_t length,

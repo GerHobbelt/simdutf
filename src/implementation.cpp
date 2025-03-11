@@ -73,6 +73,23 @@ simdutf_warn_unused encoding_type implementation::autodetect_encoding(
 }
 #endif // SIMDUTF_FEATURE_DETECT_ENCODING
 
+#ifdef SIMDUTF_FEATURE_BASE64
+simdutf_warn_unused size_t implementation::maximal_binary_length_from_base64(
+    const char *input, size_t length) const noexcept {
+  return scalar::base64::maximal_binary_length_from_base64(input, length);
+}
+
+simdutf_warn_unused size_t implementation::maximal_binary_length_from_base64(
+    const char16_t *input, size_t length) const noexcept {
+  return scalar::base64::maximal_binary_length_from_base64(input, length);
+}
+
+simdutf_warn_unused size_t implementation::base64_length_from_binary(
+    size_t length, base64_options options) const noexcept {
+  return scalar::base64::base64_length_from_binary(length, options);
+}
+#endif // SIMDUTF_FEATURE_BASE64
+
 namespace internal {
 // When there is a single implementation, we should not pay a price
 // for dispatching to the best implementation. We should just use the
@@ -662,11 +679,6 @@ public:
 #endif // SIMDUTF_FEATURE_UTF8 && SIMDUTF_FEATURE_UTF32
 
 #if SIMDUTF_FEATURE_BASE64
-  simdutf_warn_unused size_t maximal_binary_length_from_base64(
-      const char *input, size_t length) const noexcept override {
-    return set_best()->maximal_binary_length_from_base64(input, length);
-  }
-
   simdutf_warn_unused result base64_to_binary(
       const char *input, size_t length, char *output, base64_options options,
       last_chunk_handling_options last_chunk_handling_options =
@@ -681,11 +693,6 @@ public:
           last_chunk_handling_options::loose) const noexcept override {
     return set_best()->base64_to_binary_details(input, length, output, options,
                                                 last_chunk_handling_options);
-  }
-
-  simdutf_warn_unused size_t maximal_binary_length_from_base64(
-      const char16_t *input, size_t length) const noexcept override {
-    return set_best()->maximal_binary_length_from_base64(input, length);
   }
 
   simdutf_warn_unused result base64_to_binary(
@@ -704,11 +711,6 @@ public:
           last_chunk_handling_options::loose) const noexcept override {
     return set_best()->base64_to_binary_details(input, length, output, options,
                                                 last_chunk_handling_options);
-  }
-
-  simdutf_warn_unused size_t base64_length_from_binary(
-      size_t length, base64_options options) const noexcept override {
-    return set_best()->base64_length_from_binary(length, options);
   }
 
   size_t binary_to_base64(const char *input, size_t length, char *output,
@@ -1193,11 +1195,6 @@ public:
 #endif // SIMDUTF_FEATURE_UTF8 && SIMDUTF_FEATURE_UTF32
 
 #if SIMDUTF_FEATURE_BASE64
-  simdutf_warn_unused size_t maximal_binary_length_from_base64(
-      const char *, size_t) const noexcept override {
-    return 0;
-  }
-
   simdutf_warn_unused result
   base64_to_binary(const char *, size_t, char *, base64_options,
                    last_chunk_handling_options) const noexcept override {
@@ -1210,11 +1207,6 @@ public:
     return full_result(error_code::OTHER, 0, 0);
   }
 
-  simdutf_warn_unused size_t maximal_binary_length_from_base64(
-      const char16_t *, size_t) const noexcept override {
-    return 0;
-  }
-
   simdutf_warn_unused result
   base64_to_binary(const char16_t *, size_t, char *, base64_options,
                    last_chunk_handling_options) const noexcept override {
@@ -1225,11 +1217,6 @@ public:
       const char16_t *, size_t, char *, base64_options,
       last_chunk_handling_options) const noexcept override {
     return full_result(error_code::OTHER, 0, 0);
-  }
-
-  simdutf_warn_unused size_t
-  base64_length_from_binary(size_t, base64_options) const noexcept override {
-    return 0;
   }
 
   size_t binary_to_base64(const char *, size_t, char *,
@@ -1398,6 +1385,12 @@ simdutf_warn_unused size_t convert_latin1_to_utf32(
     const char *buf, size_t len, char32_t *latin1_output) noexcept {
   return get_default_implementation()->convert_latin1_to_utf32(buf, len,
                                                                latin1_output);
+}
+simdutf_warn_unused size_t latin1_length_from_utf32(size_t length) noexcept {
+  return length;
+}
+simdutf_warn_unused size_t utf32_length_from_latin1(size_t length) noexcept {
+  return length;
 }
 #endif // SIMDUTF_FEATURE_UTF32 && SIMDUTF_FEATURE_LATIN1
 
@@ -1602,6 +1595,12 @@ simdutf_warn_unused result convert_utf16be_to_latin1_with_errors(
     const char16_t *buf, size_t len, char *latin1_buffer) noexcept {
   return get_default_implementation()->convert_utf16be_to_latin1_with_errors(
       buf, len, latin1_buffer);
+}
+simdutf_warn_unused size_t latin1_length_from_utf16(size_t length) noexcept {
+  return length;
+}
+simdutf_warn_unused size_t utf16_length_from_latin1(size_t length) noexcept {
+  return length;
 }
 #endif // SIMDUTF_FEATURE_UTF16 && SIMDUTF_FEATURE_LATIN1
 
@@ -2071,6 +2070,41 @@ simdutf_warn_unused result base64_to_binary_safe_impl(
   rr.count += input_index;
   return rr;
 }
+
+  #if SIMDUTF_ATOMIC_REF
+size_t atomic_binary_to_base64(const char *input, size_t length, char *output,
+                               base64_options options) noexcept {
+  static_assert(std::atomic_ref<char>::required_alignment == 1);
+  size_t retval = 0;
+  // Arbitrary block sizes: 3KB for input, 4KB for output. Total is 7KB.
+  constexpr size_t input_block_size = 1024 * 3;
+  constexpr size_t output_block_size = input_block_size * 4 / 3;
+  std::array<char, input_block_size> inbuf;
+  std::array<char, output_block_size> outbuf;
+
+  for (size_t i = 0; i < length; i += input_block_size) {
+    const size_t current_block_size = std::min(input_block_size, length - i);
+    // This copy is inefficient.
+    // Under x64, we could use 16-byte aligned loads.
+    // Note that we warn users that the performance might be poor.
+    for (size_t j = 0; j < current_block_size; ++j) {
+      inbuf[j] = std::atomic_ref<const char>(input[i + j])
+                     .load(std::memory_order_relaxed);
+    }
+    const size_t written = binary_to_base64(inbuf.data(), current_block_size,
+                                            outbuf.data(), options);
+    // This copy is inefficient.
+    // Under x64, we could use 16-byte aligned stores.
+    for (size_t j = 0; j < written; ++j) {
+      std::atomic_ref<char>(output[retval + j])
+          .store(outbuf[j], std::memory_order_relaxed);
+    }
+    retval += written;
+  }
+  return retval;
+}
+  #endif // SIMDUTF_ATOMIC_REF
+
 #endif // SIMDUTF_FEATURE_BASE64
 
 #if SIMDUTF_FEATURE_UTF8 && SIMDUTF_FEATURE_LATIN1
