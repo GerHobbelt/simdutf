@@ -1,3 +1,4 @@
+#include <tuple>
 #include "simdutf/icelake/intrinsics.h"
 
 #include "scalar/utf16_to_utf8/valid_utf16_to_utf8.h"
@@ -51,24 +52,76 @@ implementation::detect_encodings(const char *input,
                                  size_t length) const noexcept {
   // If there is a BOM, then we trust it.
   auto bom_encoding = simdutf::BOM::check_bom(input, length);
-  // todo: convert to a one-pass algorithm
   if (bom_encoding != encoding_type::unspecified) {
     return bom_encoding;
   }
+
   int out = 0;
-  if (validate_utf8(input, length)) {
+  uint32_t utf16_err = (length % 2);
+  uint32_t utf32_err = (length % 4);
+  uint32_t ends_with_high = 0;
+  avx512_utf8_checker checker{};
+  const __m512i offset = _mm512_set1_epi32((uint32_t)0xffff2000);
+  __m512i currentmax = _mm512_setzero_si512();
+  __m512i currentoffsetmax = _mm512_setzero_si512();
+  const char *ptr = input;
+  const char *end = ptr + length;
+  for (; end - ptr >= 64; ptr += 64) {
+    // utf8 checks
+    const __m512i data = _mm512_loadu_si512((const __m512i *)ptr);
+    checker.check_next_input(data);
+
+    // utf16le_checks
+    __m512i diff = _mm512_sub_epi16(data, _mm512_set1_epi16(uint16_t(0xD800)));
+    __mmask32 surrogates =
+        _mm512_cmplt_epu16_mask(diff, _mm512_set1_epi16(uint16_t(0x0800)));
+    __mmask32 highsurrogates =
+        _mm512_cmplt_epu16_mask(diff, _mm512_set1_epi16(uint16_t(0x0400)));
+    __mmask32 lowsurrogates = surrogates ^ highsurrogates;
+    utf16_err |= (((highsurrogates << 1) | ends_with_high) != lowsurrogates);
+    ends_with_high = ((highsurrogates & 0x80000000) != 0);
+
+    // utf32le checks
+    currentoffsetmax =
+        _mm512_max_epu32(_mm512_add_epi32(data, offset), currentoffsetmax);
+    currentmax = _mm512_max_epu32(data, currentmax);
+  }
+
+  // last block with 0 <= len < 64
+  __mmask64 read_mask = (__mmask64(1) << (end - ptr)) - 1;
+  const __m512i data = _mm512_maskz_loadu_epi8(read_mask, (const __m512i *)ptr);
+  checker.check_next_input(data);
+
+  __m512i diff = _mm512_sub_epi16(data, _mm512_set1_epi16(uint16_t(0xD800)));
+  __mmask32 surrogates =
+      _mm512_cmplt_epu16_mask(diff, _mm512_set1_epi16(uint16_t(0x0800)));
+  __mmask32 highsurrogates =
+      _mm512_cmplt_epu16_mask(diff, _mm512_set1_epi16(uint16_t(0x0400)));
+  __mmask32 lowsurrogates = surrogates ^ highsurrogates;
+  utf16_err |= (((highsurrogates << 1) | ends_with_high) != lowsurrogates);
+
+  currentoffsetmax =
+      _mm512_max_epu32(_mm512_add_epi32(data, offset), currentoffsetmax);
+  currentmax = _mm512_max_epu32(data, currentmax);
+
+  const __m512i standardmax = _mm512_set1_epi32((uint32_t)0x10ffff);
+  const __m512i standardoffsetmax = _mm512_set1_epi32((uint32_t)0xfffff7ff);
+  __m512i is_zero =
+      _mm512_xor_si512(_mm512_max_epu32(currentmax, standardmax), standardmax);
+  utf32_err |= (_mm512_test_epi8_mask(is_zero, is_zero) != 0);
+  is_zero = _mm512_xor_si512(
+      _mm512_max_epu32(currentoffsetmax, standardoffsetmax), standardoffsetmax);
+  utf32_err |= (_mm512_test_epi8_mask(is_zero, is_zero) != 0);
+  checker.check_eof();
+  bool is_valid_utf8 = !checker.errors();
+  if (is_valid_utf8) {
     out |= encoding_type::UTF8;
   }
-  if ((length % 2) == 0) {
-    if (validate_utf16le(reinterpret_cast<const char16_t *>(input),
-                         length / 2)) {
-      out |= encoding_type::UTF16_LE;
-    }
+  if (utf16_err == 0) {
+    out |= encoding_type::UTF16_LE;
   }
-  if ((length % 4) == 0) {
-    if (validate_utf32(reinterpret_cast<const char32_t *>(input), length / 4)) {
-      out |= encoding_type::UTF32_LE;
-    }
+  if (utf32_err == 0) {
+    out |= encoding_type::UTF32_LE;
   }
   return out;
 }
@@ -390,14 +443,7 @@ simdutf_warn_unused result implementation::validate_utf16be_with_errors(
 
 simdutf_warn_unused bool
 implementation::validate_utf32(const char32_t *buf, size_t len) const noexcept {
-  const char32_t *tail = icelake::validate_utf32(buf, len);
-  if (tail) {
-    return scalar::utf32::validate(tail, len - (tail - buf));
-  } else {
-    // we come here if there was an error, or buf was nullptr which may happen
-    // for empty input.
-    return len == 0;
-  }
+  return icelake::validate_utf32(buf, len);
 }
 
 simdutf_warn_unused result implementation::validate_utf32_with_errors(
@@ -1278,16 +1324,7 @@ implementation::count_utf8(const char *input, size_t length) const noexcept {
     }
   }
 
-  __m256i first_half = _mm512_extracti64x4_epi64(unrolled_popcount, 0);
-  __m256i second_half = _mm512_extracti64x4_epi64(unrolled_popcount, 1);
-  answer -= (size_t)_mm256_extract_epi64(first_half, 0) +
-            (size_t)_mm256_extract_epi64(first_half, 1) +
-            (size_t)_mm256_extract_epi64(first_half, 2) +
-            (size_t)_mm256_extract_epi64(first_half, 3) +
-            (size_t)_mm256_extract_epi64(second_half, 0) +
-            (size_t)_mm256_extract_epi64(second_half, 1) +
-            (size_t)_mm256_extract_epi64(second_half, 2) +
-            (size_t)_mm256_extract_epi64(second_half, 3);
+  answer -= _mm512_reduce_add_epi64(unrolled_popcount);
 
   return answer + scalar::utf8::count_code_points(
                       reinterpret_cast<const char *>(str + i), length - i);
@@ -1473,16 +1510,7 @@ simdutf_warn_unused size_t implementation::utf8_length_from_latin1(
           eight_64bits, _mm512_sad_epu8(runner, _mm512_setzero_si512()));
     }
 
-    __m256i first_half = _mm512_extracti64x4_epi64(eight_64bits, 0);
-    __m256i second_half = _mm512_extracti64x4_epi64(eight_64bits, 1);
-    answer += (size_t)_mm256_extract_epi64(first_half, 0) +
-              (size_t)_mm256_extract_epi64(first_half, 1) +
-              (size_t)_mm256_extract_epi64(first_half, 2) +
-              (size_t)_mm256_extract_epi64(first_half, 3) +
-              (size_t)_mm256_extract_epi64(second_half, 0) +
-              (size_t)_mm256_extract_epi64(second_half, 1) +
-              (size_t)_mm256_extract_epi64(second_half, 2) +
-              (size_t)_mm256_extract_epi64(second_half, 3);
+    answer += _mm512_reduce_add_epi64(eight_64bits);
   } else if (answer > 0) {
     for (; i + sizeof(__m512i) <= length; i += sizeof(__m512i)) {
       __m512i latin = _mm512_loadu_si512((const __m512i *)(str + i));

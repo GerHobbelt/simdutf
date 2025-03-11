@@ -4,8 +4,9 @@
 #include <array>
 #include <cstddef>
 #include <iostream>
-
 #include <memory>
+#include <tuple>
+
 #include <sys/types.h>
 #include <tests/helpers/random_int.h>
 #include <tests/helpers/test.h>
@@ -552,7 +553,7 @@ TEST(base64_decode_strict_cases_length) {
 }
 
 TEST(issue_single_bad16) {
-  std::vector<char16_t> data = {0x3d};
+  std::vector<char16_t> data = {0x3f};
   ASSERT_EQUAL(data.size(), 1);
   size_t outlen = implementation.maximal_binary_length_from_base64(data.data(),
                                                                    data.size());
@@ -563,6 +564,31 @@ TEST(issue_single_bad16) {
       simdutf::last_chunk_handling_options::strict);
   ASSERT_EQUAL(r.error, simdutf::error_code::INVALID_BASE64_CHARACTER);
   ASSERT_EQUAL(r.count, 0);
+}
+
+TEST(issue_615) {
+  const std::vector<char> data{' ', '=', '='};
+  std::vector<char> output(100);
+  const auto r1 =
+      implementation.base64_to_binary(data.data(), data.size(), output.data(),
+                                      simdutf::base64_default, simdutf::strict);
+  ASSERT_EQUAL(r1.error, simdutf::error_code::BASE64_INPUT_REMAINDER);
+  ASSERT_EQUAL(r1.count, 0);
+  const auto r2 = implementation.base64_to_binary(
+      data.data() + 1, data.size() - 1, output.data(), simdutf::base64_default,
+      simdutf::strict);
+  ASSERT_EQUAL(r2.error, simdutf::error_code::BASE64_INPUT_REMAINDER);
+  ASSERT_EQUAL(r2.count, 0);
+  const auto r3 = implementation.base64_to_binary(
+      data.data(), data.size(), output.data(), simdutf::base64_default,
+      simdutf::stop_before_partial);
+  ASSERT_EQUAL(r3.error, simdutf::error_code::SUCCESS);
+  ASSERT_EQUAL(r3.count, 0);
+  const auto r4 = implementation.base64_to_binary(
+      data.data() + 1, data.size() - 1, output.data(), simdutf::base64_default,
+      simdutf::stop_before_partial);
+  ASSERT_EQUAL(r4.error, simdutf::error_code::SUCCESS);
+  ASSERT_EQUAL(r4.count, 0);
 }
 
 TEST(issue_kkk) {
@@ -761,7 +787,7 @@ TEST(base64_decode_webkit_like_but_random_more_cases) {
       for (size_t i = 0; i < len; i++) {
         source[i] = byte_generator(gen);
       }
-      size_t size = implementation.binary_to_base64(
+      [[maybe_unused]] const size_t size = implementation.binary_to_base64(
           source.data(), source.size(), buffer.data());
       for (size_t removed = 1; !buffer.empty() && removed <= 2; removed++) {
         buffer.pop_back();
@@ -818,7 +844,7 @@ TEST(base64_decode_webkit_like_but_random_with_spaces_more_cases) {
       for (size_t i = 0; i < len; i++) {
         source[i] = byte_generator(gen);
       }
-      size_t size = implementation.binary_to_base64(
+      [[maybe_unused]] const size_t size = implementation.binary_to_base64(
           source.data(), source.size(), buffer.data());
       buffer = add_simple_spaces(buffer, gen, 5 + len / 4);
       auto is_space = [](char c) {

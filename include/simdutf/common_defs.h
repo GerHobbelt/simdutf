@@ -1,30 +1,8 @@
 #ifndef SIMDUTF_COMMON_DEFS_H
 #define SIMDUTF_COMMON_DEFS_H
 
-#include <cassert>
 #include "simdutf/portability.h"
 #include "simdutf/avx512.h"
-
-#if defined(__GNUC__)
-  // Marks a block with a name so that MCA analysis can see it.
-  #define SIMDUTF_BEGIN_DEBUG_BLOCK(name)                                      \
-    __asm volatile("# LLVM-MCA-BEGIN " #name);
-  #define SIMDUTF_END_DEBUG_BLOCK(name) __asm volatile("# LLVM-MCA-END " #name);
-  #define SIMDUTF_DEBUG_BLOCK(name, block)                                     \
-    BEGIN_DEBUG_BLOCK(name);                                                   \
-    block;                                                                     \
-    END_DEBUG_BLOCK(name);
-#else
-  #define SIMDUTF_BEGIN_DEBUG_BLOCK(name)
-  #define SIMDUTF_END_DEBUG_BLOCK(name)
-  #define SIMDUTF_DEBUG_BLOCK(name, block)
-#endif
-
-// Align to N-byte boundary
-#define SIMDUTF_ROUNDUP_N(a, n) (((a) + ((n) - 1)) & ~((n) - 1))
-#define SIMDUTF_ROUNDDOWN_N(a, n) ((a) & ~((n) - 1))
-
-#define SIMDUTF_ISALIGNED_N(ptr, n) (((uintptr_t)(ptr) & ((n) - 1)) == 0)
 
 #if defined(SIMDUTF_REGULAR_VISUAL_STUDIO)
   #define SIMDUTF_DEPRECATED __declspec(deprecated)
@@ -138,14 +116,5 @@
     #define SIMDUTF_DLLIMPORTEXPORT
   #endif
 #endif
-
-/// If EXPR is an error, returns it.
-#define SIMDUTF_TRY(EXPR)                                                      \
-  {                                                                            \
-    auto _err = (EXPR);                                                        \
-    if (_err) {                                                                \
-      return _err;                                                             \
-    }                                                                          \
-  }
 
 #endif // SIMDUTF_COMMON_DEFS_H

@@ -244,6 +244,12 @@ compress_decode_base64(char *dst, const chartype *src, size_t srclen,
   }
   if (srclen == 0) {
     if (!ignore_garbage && equalsigns > 0) {
+      if (last_chunk_options == last_chunk_handling_options::strict) {
+        return {BASE64_INPUT_REMAINDER, 0, 0};
+      } else if (last_chunk_options ==
+                 last_chunk_handling_options::stop_before_partial) {
+        return {SUCCESS, 0, 0};
+      }
       return {INVALID_BASE64_CHARACTER, equallocation, 0};
     }
     return {SUCCESS, 0, 0};
@@ -410,6 +416,14 @@ compress_decode_base64(char *dst, const chartype *src, size_t srclen,
   }
 
   if (!ignore_garbage && equalsigns > 0) {
+    if (last_chunk_options == last_chunk_handling_options::strict) {
+      return {BASE64_INPUT_REMAINDER, size_t(src - srcinit),
+              size_t(dst - dstinit)};
+    }
+    if (last_chunk_options ==
+        last_chunk_handling_options::stop_before_partial) {
+      return {SUCCESS, size_t(src - srcinit), size_t(dst - dstinit)};
+    }
     if ((size_t(dst - dstinit) % 3 == 0) ||
         ((size_t(dst - dstinit) % 3) + 1 + equalsigns != 4)) {
       return {INVALID_BASE64_CHARACTER, equallocation, size_t(dst - dstinit)};
