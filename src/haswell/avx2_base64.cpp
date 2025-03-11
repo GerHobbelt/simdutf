@@ -213,8 +213,8 @@ struct block64 {
   __m256i chunks[2];
 };
 
-template <bool base64_url>
-static inline uint32_t to_base64_mask(__m256i *src, bool *error) {
+template <bool base64_url, bool ignore_garbage>
+static inline uint32_t to_base64_mask(__m256i *src, uint32_t *error) {
   const __m256i ascii_space_tbl =
       _mm256_setr_epi8(0x20, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x9, 0xa,
                        0x0, 0xc, 0xd, 0x0, 0x0, 0x20, 0x0, 0x0, 0x0, 0x0, 0x0,
@@ -295,20 +295,26 @@ static inline uint32_t to_base64_mask(__m256i *src, bool *error) {
   const __m256i chk =
       _mm256_adds_epi8(_mm256_shuffle_epi8(check_values, check_hash), *src);
   const int mask = _mm256_movemask_epi8(chk);
-  if (mask) {
+  if (!ignore_garbage && mask) {
     __m256i ascii_space =
         _mm256_cmpeq_epi8(_mm256_shuffle_epi8(ascii_space_tbl, *src), *src);
-    *error |= (mask != _mm256_movemask_epi8(ascii_space));
+    *error = (mask ^ _mm256_movemask_epi8(ascii_space));
   }
   *src = out;
   return (uint32_t)mask;
 }
 
-template <bool base64_url>
-static inline uint64_t to_base64_mask(block64 *b, bool *error) {
-  *error = 0;
-  uint64_t m0 = to_base64_mask<base64_url>(&b->chunks[0], error);
-  uint64_t m1 = to_base64_mask<base64_url>(&b->chunks[1], error);
+template <bool base64_url, bool ignore_garbage>
+static inline uint64_t to_base64_mask(block64 *b, uint64_t *error) {
+  uint32_t err0 = 0;
+  uint32_t err1 = 0;
+  uint64_t m0 =
+      to_base64_mask<base64_url, ignore_garbage>(&b->chunks[0], &err0);
+  uint64_t m1 =
+      to_base64_mask<base64_url, ignore_garbage>(&b->chunks[1], &err1);
+  if (!ignore_garbage) {
+    *error = err0 | ((uint64_t)err1 << 32);
+  }
   return m0 | (m1 << 32);
 }
 
@@ -387,7 +393,7 @@ static inline void base64_decode_block_safe(char *out, block64 *b) {
   std::memcpy(out + 24, buffer, 24);
 }
 
-template <bool base64_url, typename chartype>
+template <bool base64_url, bool ignore_garbage, typename chartype>
 full_result
 compress_decode_base64(char *dst, const chartype *src, size_t srclen,
                        base64_options options,
@@ -397,12 +403,13 @@ compress_decode_base64(char *dst, const chartype *src, size_t srclen,
   size_t equallocation =
       srclen; // location of the first padding character if any
   // skip trailing spaces
-  while (srclen > 0 && scalar::base64::is_eight_byte(src[srclen - 1]) &&
+  while (!ignore_garbage && srclen > 0 &&
+         scalar::base64::is_eight_byte(src[srclen - 1]) &&
          to_base64[uint8_t(src[srclen - 1])] == 64) {
     srclen--;
   }
   size_t equalsigns = 0;
-  if (srclen > 0 && src[srclen - 1] == '=') {
+  if (!ignore_garbage && srclen > 0 && src[srclen - 1] == '=') {
     equallocation = srclen - 1;
     srclen--;
     equalsigns = 1;
@@ -418,7 +425,7 @@ compress_decode_base64(char *dst, const chartype *src, size_t srclen,
     }
   }
   if (srclen == 0) {
-    if (equalsigns > 0) {
+    if (!ignore_garbage && equalsigns > 0) {
       return {INVALID_BASE64_CHARACTER, equallocation, 0};
     }
     return {SUCCESS, 0, 0};
@@ -440,16 +447,14 @@ compress_decode_base64(char *dst, const chartype *src, size_t srclen,
       block64 b;
       load_block(&b, src);
       src += 64;
-      bool error = false;
-      uint64_t badcharmask = to_base64_mask<base64_url>(&b, &error);
-      if (error) {
+      uint64_t error = 0;
+      uint64_t badcharmask =
+          to_base64_mask<base64_url, ignore_garbage>(&b, &error);
+      if (!ignore_garbage && error) {
         src -= 64;
-        while (src < srcend && scalar::base64::is_eight_byte(*src) &&
-               to_base64[uint8_t(*src)] <= 64) {
-          src++;
-        }
-        return {error_code::INVALID_BASE64_CHARACTER, size_t(src - srcinit),
-                size_t(dst - dstinit)};
+        size_t error_offset = _tzcnt_u64(error);
+        return {error_code::INVALID_BASE64_CHARACTER,
+                size_t(src - srcinit + error_offset), size_t(dst - dstinit)};
       }
       if (badcharmask != 0) {
         // optimization opportunity: check for simple masks like those made of
@@ -494,7 +499,8 @@ compress_decode_base64(char *dst, const chartype *src, size_t srclen,
     while ((bufferptr - buffer_start) % 64 != 0 && src < srcend) {
       uint8_t val = to_base64[uint8_t(*src)];
       *bufferptr = char(val);
-      if (!scalar::base64::is_eight_byte(*src) || val > 64) {
+      if (!ignore_garbage &&
+          (!scalar::base64::is_eight_byte(*src) || val > 64)) {
         return {error_code::INVALID_BASE64_CHARACTER, size_t(src - srcinit),
                 size_t(dst - dstinit)};
       }
@@ -540,8 +546,14 @@ compress_decode_base64(char *dst, const chartype *src, size_t srclen,
     // backtrack
     int leftover = int(bufferptr - buffer_start);
     while (leftover > 0) {
-      while (to_base64[uint8_t(*(src - 1))] == 64) {
-        src--;
+      if (!ignore_garbage) {
+        while (to_base64[uint8_t(*(src - 1))] == 64) {
+          src--;
+        }
+      } else {
+        while (to_base64[uint8_t(*(src - 1))] >= 64) {
+          src--;
+        }
       }
       src--;
       leftover--;
@@ -550,14 +562,14 @@ compress_decode_base64(char *dst, const chartype *src, size_t srclen,
   if (src < srcend + equalsigns) {
     full_result r = scalar::base64::base64_tail_decode(
         dst, src, srcend - src, equalsigns, options, last_chunk_options);
+    r.input_count += size_t(src - srcinit);
     if (r.error == error_code::INVALID_BASE64_CHARACTER ||
         r.error == error_code::BASE64_EXTRA_BITS) {
-      r.input_count += size_t(src - srcinit);
       return r;
     } else {
       r.output_count += size_t(dst - dstinit);
     }
-    if (last_chunk_options != stop_before_partial &&
+    if (!ignore_garbage && last_chunk_options != stop_before_partial &&
         r.error == error_code::SUCCESS && equalsigns > 0) {
       // additional checks
       if ((r.output_count % 3 == 0) ||
@@ -568,7 +580,7 @@ compress_decode_base64(char *dst, const chartype *src, size_t srclen,
     }
     return r;
   }
-  if (equalsigns > 0) {
+  if (!ignore_garbage && equalsigns > 0) {
     if ((size_t(dst - dstinit) % 3 == 0) ||
         ((size_t(dst - dstinit) % 3) + 1 + equalsigns != 4)) {
       return {INVALID_BASE64_CHARACTER, equallocation, size_t(dst - dstinit)};

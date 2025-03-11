@@ -1,3 +1,7 @@
+
+simdutf: Unicode validation and transcoding at billions of characters per second
+===============================================
+
 [![Alpine Linux](https://github.com/simdutf/simdutf/actions/workflows/alpine.yml/badge.svg)](https://github.com/simdutf/simdutf/actions/workflows/alpine.yml)
 [![MSYS2-CI](https://github.com/simdutf/simdutf/actions/workflows/msys2.yml/badge.svg)](https://github.com/simdutf/simdutf/actions/workflows/msys2.yml)
 [![MSYS2-CLANG-CI](https://github.com/simdutf/simdutf/actions/workflows/msys2-clang.yml/badge.svg)](https://github.com/simdutf/simdutf/actions/workflows/msys2-clang.yml)
@@ -12,6 +16,7 @@
   - [Usage (Usage)](#usage-usage)
   - [Usage (CMake)](#usage-cmake)
   - [Single-header version](#single-header-version)
+  - [Packages](#packages)
   - [Example](#example)
   - [API](#api)
   - [Base64](#base64)
@@ -21,8 +26,6 @@
   - [References](#references)
   - [License](#license)
 
-simdutf: Unicode validation and transcoding at billions of characters per second
-===============================================
 
 Most modern software relies on the [Unicode standard](https://en.wikipedia.org/wiki/Unicode).
 In memory, Unicode strings are represented using either
@@ -58,7 +61,7 @@ This library provide fast Unicode functions such as
 - [WHATWG forgiving-base64](https://infra.spec.whatwg.org/#forgiving-base64-decode) (with or without URL encoding) to binary,
 - Binary to base64 (with or without URL encoding).
 
-The functions are accelerated using SIMD instructions (e.g., ARM NEON, SSE, AVX, AVX-512, RISC-V Vector Extension, etc.). When your strings contain hundreds of characters, we can often transcode them at speeds exceeding a billion characters per second. You should expect high speeds not only with English strings (ASCII) but also Chinese, Japanese, Arabic, and so forth. We handle the full character range (including, for example, emojis).
+The functions are accelerated using SIMD instructions (e.g., ARM NEON, SSE, AVX, AVX-512, RISC-V Vector Extension, LoongSon, etc.). When your strings contain hundreds of characters, we can often transcode them at speeds exceeding a billion characters per second. You should expect high speeds not only with English strings (ASCII) but also Chinese, Japanese, Arabic, and so forth. We handle the full character range (including, for example, emojis).
 
 The library compiles down to a small library of a few hundred kilobytes. Our functions are exception-free and non allocating. We have extensive tests and extensive benchmarks.
 
@@ -72,10 +75,12 @@ The simdutf library is used by:
 - [Node.js](https://nodejs.org/en/) (19.4.0 or better, 20.0 or better, 18.15 or better), a standard JavaScript runtime environment,
 - [Bun](https://bun.sh), a fast JavaScript runtime environment,
 - [WebKit](https://github.com/WebKit/WebKit/pull/9990), the Web engine behind the Safari browser (iOS, macOS),
+- [Chromium](https://chromium-review.googlesource.com/c/chromium/src/+/6054817), the Web engine behind the Google Chrome, Microsoft Edge and Brave,
 - [StarRocks](https://www.starrocks.io), an Open-Source, High-Performance Analytical Database,
 - [Oracle GraalVM JavaScript](https://github.com/oracle/graaljs), a JavaScript implementation by Oracle,
 - [Couchbase](https://www.couchbase.com), a popular database system,
 - [Ladybird](https://ladybird.org), an independent Web browser,
+- [StarRocks](https://www.starrocks.io), a High-Performance Analytical Database,
 - [Cloudflare workerd](https://github.com/cloudflare/workerd), a JavaScript/Wasm Runtime,
 - [haskell/text](https://github.com/haskell/text), a library for fast operations over Unicode text,
 - [klogg](https://github.com/variar/klogg), a Really fast log explorer,
@@ -144,7 +149,7 @@ Linux or macOS users might follow the following instructions if they have a rece
 
 1. Pull the library in a directory
    ```
-   wget https://github.com/simdutf/simdutf/releases/download/v5.6.0/singleheader.zip
+   wget https://github.com/simdutf/simdutf/releases/download/v5.7.0/singleheader.zip
    unzip singleheader.zip
    ```
    You can replace `wget` by `curl -OL https://...` if you prefer.
@@ -175,16 +180,25 @@ ctest .
 
 Visual Studio users must specify whether they want to build the Release or Debug version.
 
-To run benchmarks, execute the `benchmark` command. You can get help on its
+To run transcoding benchmarks, execute the `benchmark` command. You can get help on its
 usage by first building it and then calling it with the `--help` flag.
 E.g., under Linux you may do the following:
 
 ```
-cmake -B build
+cmake -B build -D SIMDUTF_BENCHMARKS=ON
 cmake --build build
 ./build/benchmarks/benchmark --help
 ./build/benchmarks/base64/base64_benchmark --help
 ```
+
+E.g., to run base64 decoding benchmarks on DNS data (short inputs), do
+
+```
+./build/benchmarks/base64/benchmark_base64 -d pathto/base64data/dns/*.txt
+```
+
+where pathto/base64data should contain the path to a clone of
+the repository https://github.com/lemire/base64data.
 
 Instructions are similar for Visual Studio users.
 
@@ -206,7 +220,7 @@ Single-header version
 You can create a single-header version of the library where
 all of the code is put into two files (`simdutf.h` and `simdutf.cpp`).
 We publish a zip archive containing these files, e.g., see
-https://github.com/simdutf/simdutf/releases/download/v5.6.0/singleheader.zip
+https://github.com/simdutf/simdutf/releases/download/v5.7.0/singleheader.zip
 
 You may generate it on your own using a Python script.
 
@@ -223,6 +237,12 @@ cd singleheader
 c++ -o amalgamation_demo amalgamation_demo.cpp -std=c++17
 ./amalgamation_demo
 ```
+
+Packages
+------
+
+[![Packaging status](https://repology.org/badge/vertical-allrepos/simdutf.svg)](https://repology.org/project/simdutf/versions)
+
 
 Example
 ---------
@@ -1640,7 +1660,7 @@ void change_endianness_utf16(const char16_t * input, size_t length, char16_t * o
 Base64
 -----
 
-We also support converting from [WHATWG forgiving-base64](https://infra.spec.whatwg.org/#forgiving-base64-decode) to binary, and back. In particular, you can convert base64 inputs which contain ASCII spaces to binary. We also support the base64 URL encoding alternative. These functions are part of the Node.js JavaScript runtime: in particular `atob` in Node.js relies on simdutf.
+We also support converting from [WHATWG forgiving-base64](https://infra.spec.whatwg.org/#forgiving-base64-decode) to binary, and back. In particular, you can convert base64 inputs which contain ASCII spaces (' ', '\t', '\n', '\r', '\f') to binary. We also support the base64 URL encoding alternative. These functions are part of the Node.js JavaScript runtime: in particular `atob` in Node.js relies on simdutf.
 
 Converting binary data to base64 always succeeds and is relatively simple:
 ```C++
@@ -1649,7 +1669,7 @@ simdutf::binary_to_base64(source.data(), source.size(), buffer.data());
 ```
 
 Decoding base64 requires validation and, thus, error handling. Furthermore, because
-we prune spaces, we may need to adjust the result size afterword.
+we prune ASCII spaces, we may need to adjust the result size afterward.
 
 ```C++
 std::vector<char> buffer(simdutf::maximal_binary_length_from_base64(base64.data(), base64.size()));
@@ -1808,10 +1828,12 @@ We support two conventions: `base64_default` and `base64_url`:
   `simdutf::binary_to_base64(source, size, out, buffer.data())`. When decoding, white space
   characters are omitted as per the [WHATWG forgiving-base64](https://infra.spec.whatwg.org/#forgiving-base64-decode) standard. Further, if padding characters are present at the end of the
   stream, there must be no more than two, and if there are any, the total number of characters (excluding
-  spaces but including padding characters) must be divisible by four.
+  ASCII spaces ' ', '\t', '\n', '\r', '\f' but including padding characters) must be divisible by four.
 * The URL convention (`base64_url`) uses the characters `-` and `_` as part of its alphabet. It does
   not pad its output. Thus, we have that the string `"Hello, World!"` is encoded to `"SGVsbG8sIFdvcmxkIQ"`.
   To specify the URL convention, you can pass the appropriate option to our decoding and encoding functions: e.g., `simdutf::base64_to_binary(source, size, out, simdutf::base64_url)`.
+
+When we encounter a character that is neither an ASCII space nor a base64 character (a garbage character), we detect an error. To tolerate 'garbage' characters, you can use `base64_default_accept_garbage` or `base64_url_accept_garbage` instead of `base64_default` or `base64_url`.
 
 Thus we follow the convention of systems such as the Node or Bun JavaScript runtimes with respect to padding. The
 default base64 uses padding whereas the URL variant does not.
@@ -1845,7 +1867,7 @@ The strict approach is useful if you want to have one-to-one correspondance betw
 the base64 code and the binary data. In the defaut setting is used (`last_chunk_handling_options::loose`),
 then `"ZXhhZg=="`, `"ZXhhZg"`, `"ZXhhZh=="` all decode to the same binary content.
 If `last_chunk_options` is set to `last_chunk_handling_options::strict`, then
-decoding `"ZXhhZg=="` succeeds, but decoding `"ZXhhZg"` fails with `simdutf::error_code::BASE64_INPUT_REMAINDER` while `"ZXhhZh=="` fails with 
+decoding `"ZXhhZg=="` succeeds, but decoding `"ZXhhZg"` fails with `simdutf::error_code::BASE64_INPUT_REMAINDER` while `"ZXhhZh=="` fails with
 `simdutf::error_code::BASE64_EXTRA_BITS`.
 
 The specification of our base64 functions is as follows:
@@ -1853,13 +1875,20 @@ The specification of our base64 functions is as follows:
 ```C++
 
 // base64_options are used to specify the base64 encoding options.
+// ASCII spaces are ' ', '\t', '\n', '\r', '\f'
+// garbage characters are characters that are not part of the base64 alphabet nor ASCII spaces.
 using base64_options = uint64_t;
-enum : base64_options {
-  base64_default = 0, /* standard base64 format (with padding) */
-  base64_url = 1, /* base64url format (no padding) */
+enum base64_options : uint64_t {
+  base64_default = 0,         /* standard base64 format (with padding) */
+  base64_url = 1,             /* base64url format (no padding) */
   base64_reverse_padding = 2, /* modifier for base64_default and base64_url */
-  base64_default_no_padding = base64_default | base64_reverse_padding, /* standard base64 format without padding */
-  base64_url_with_padding = base64_url | base64_reverse_padding, /* base64url with padding */
+  base64_default_no_padding =
+      base64_default |
+      base64_reverse_padding, /* standard base64 format without padding */
+  base64_url_with_padding =
+      base64_url | base64_reverse_padding, /* base64url with padding */
+  base64_default_accept_garbage = 4,       /* standard base64 format accepting garbage characters */
+  base64_url_accept_garbage = 5,           /* base64url format accepting garbage characters */
 };
 
 // last_chunk_handling_options are used to specify the handling of the last

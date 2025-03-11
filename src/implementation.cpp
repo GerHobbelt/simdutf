@@ -27,6 +27,8 @@ template <typename T> std::string toBinaryString(T b) {
 #include "simdutf/westmere.h"
 #include "simdutf/ppc64.h"
 #include "simdutf/rvv.h"
+#include "simdutf/lsx.h"
+#include "simdutf/lasx.h"
 #include "simdutf/fallback.h" // have it always last.
 
 #include "scalar/utf8.h"
@@ -85,7 +87,8 @@ namespace internal {
 #define SIMDUTF_SINGLE_IMPLEMENTATION                                          \
   (SIMDUTF_IMPLEMENTATION_ICELAKE + SIMDUTF_IMPLEMENTATION_HASWELL +           \
        SIMDUTF_IMPLEMENTATION_WESTMERE + SIMDUTF_IMPLEMENTATION_ARM64 +        \
-       SIMDUTF_IMPLEMENTATION_PPC64 + SIMDUTF_IMPLEMENTATION_FALLBACK ==       \
+       SIMDUTF_IMPLEMENTATION_PPC64 + SIMDUTF_IMPLEMENTATION_LSX +             \
+       SIMDUTF_IMPLEMENTATION_LASX + SIMDUTF_IMPLEMENTATION_FALLBACK ==        \
    1)
 
 // Static array of known implementations. We are hoping these get baked into the
@@ -127,6 +130,18 @@ static const rvv::implementation *get_rvv_singleton() {
   return &rvv_singleton;
 }
 #endif
+#if SIMDUTF_IMPLEMENTATION_LSX
+static const lsx::implementation *get_lsx_singleton() {
+  static const lsx::implementation lsx_singleton{};
+  return &lsx_singleton;
+}
+#endif
+#if SIMDUTF_IMPLEMENTATION_LASX
+static const lasx::implementation *get_lasx_singleton() {
+  static const lasx::implementation lasx_singleton{};
+  return &lasx_singleton;
+}
+#endif
 #if SIMDUTF_IMPLEMENTATION_FALLBACK
 static const fallback::implementation *get_fallback_singleton() {
   static const fallback::implementation fallback_singleton{};
@@ -151,6 +166,12 @@ static const implementation *get_single_implementation() {
   #endif
   #if SIMDUTF_IMPLEMENTATION_PPC64
   get_ppc64_singleton();
+  #endif
+  #if SIMDUTF_IMPLEMENTATION_LSX
+  get_lsx_singleton();
+  #endif
+  #if SIMDUTF_IMPLEMENTATION_LASX
+  get_lasx_singleton();
   #endif
   #if SIMDUTF_IMPLEMENTATION_FALLBACK
   get_fallback_singleton();
@@ -699,6 +720,12 @@ get_available_implementation_pointers() {
 #endif
 #if SIMDUTF_IMPLEMENTATION_RVV
           get_rvv_singleton(),
+#endif
+#if SIMDUTF_IMPLEMENTATION_LSX
+          get_lsx_singleton(),
+#endif
+#if SIMDUTF_IMPLEMENTATION_LASX
+          get_lasx_singleton(),
 #endif
 #if SIMDUTF_IMPLEMENTATION_FALLBACK
           get_fallback_singleton(),
@@ -1778,6 +1805,21 @@ simdutf_warn_unused result base64_to_binary_safe_impl(
     if (r.error != error_code::INVALID_BASE64_CHARACTER &&
         r.error != error_code::BASE64_EXTRA_BITS) {
       outlen = r.output_count;
+      if (last_chunk_handling_options == stop_before_partial) {
+        if ((r.output_count % 3) != 0) {
+          bool empty_trail = true;
+          for (size_t i = r.input_count; i < length; i++) {
+            if (!scalar::base64::is_ascii_white_space_or_padding(input[i])) {
+              empty_trail = false;
+              break;
+            }
+          }
+          if (empty_trail) {
+            r.input_count = length;
+          }
+        }
+        return {r.error, r.input_count};
+      }
       return {r.error, length};
     }
     return r;
@@ -1844,7 +1886,11 @@ simdutf_warn_unused result base64_to_binary_safe_impl(
   }
   if (rr.error == error_code::SUCCESS &&
       last_chunk_handling_options == stop_before_partial) {
-    rr.count = tail_input - input;
+    if (tail_input > input + input_index) {
+      rr.count = tail_input - input;
+    } else if (r.input_count > 0) {
+      rr.count = r.input_count + rr.count;
+    }
     return rr;
   }
   rr.count += input_index;

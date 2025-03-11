@@ -16,6 +16,11 @@ template <class char_type> bool is_ascii_white_space(char_type c) {
   return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f';
 }
 
+template <class char_type> bool is_ascii_white_space_or_padding(char_type c) {
+  return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' ||
+         c == '=';
+}
+
 template <class char_type> bool is_eight_byte(char_type c) {
   if (sizeof(char_type) == 1) {
     return true;
@@ -53,6 +58,9 @@ base64_tail_decode(char *dst, const char_type *src, size_t length,
   const char_type *srcend = src + length;
   const char_type *srcinit = src;
   const char *dstinit = dst;
+  const bool ignore_garbage =
+      (options == base64_options::base64_url_accept_garbage) ||
+      (options == base64_options::base64_default_accept_garbage);
 
   uint32_t x;
   size_t idx;
@@ -72,27 +80,52 @@ base64_tail_decode(char *dst, const char_type *src, size_t length,
     }
     idx = 0;
     // we need at least four characters.
-    while (idx < 4 && src < srcend) {
+#ifdef __clang__
+    // If possible, we read four characters at a time. (It is an optimization.)
+    if (ignore_garbage && src + 4 <= srcend) {
+      char_type c0 = src[0];
+      char_type c1 = src[1];
+      char_type c2 = src[2];
+      char_type c3 = src[3];
+      uint8_t code0 = to_base64[uint8_t(c0)];
+      uint8_t code1 = to_base64[uint8_t(c1)];
+      uint8_t code2 = to_base64[uint8_t(c2)];
+      uint8_t code3 = to_base64[uint8_t(c3)];
+      buffer[idx] = code0;
+      idx += (is_eight_byte(c0) && code0 <= 63);
+      buffer[idx] = code1;
+      idx += (is_eight_byte(c1) && code1 <= 63);
+      buffer[idx] = code2;
+      idx += (is_eight_byte(c2) && code2 <= 63);
+      buffer[idx] = code3;
+      idx += (is_eight_byte(c3) && code3 <= 63);
+      src += 4;
+    }
+#endif
+    while ((idx < 4) && (src < srcend)) {
       char_type c = *src;
       uint8_t code = to_base64[uint8_t(c)];
       buffer[idx] = uint8_t(code);
       if (is_eight_byte(c) && code <= 63) {
         idx++;
-      } else if (code > 64 || !scalar::base64::is_eight_byte(c)) {
+      } else if (!ignore_garbage &&
+                 (code > 64 || !scalar::base64::is_eight_byte(c))) {
         return {INVALID_BASE64_CHARACTER, size_t(src - srcinit),
                 size_t(dst - dstinit)};
       } else {
-        // We have a space or a newline. We ignore it.
+        // We have a space or a newline or garbage. We ignore it.
       }
       src++;
     }
     if (idx != 4) {
-      if (last_chunk_options == last_chunk_handling_options::strict &&
+      if (!ignore_garbage &&
+          last_chunk_options == last_chunk_handling_options::strict &&
           (idx != 1) && ((idx + padded_characters) & 3) != 0) {
         // The partial chunk was at src - idx
         return {BASE64_INPUT_REMAINDER, size_t(src - srcinit),
                 size_t(dst - dstinit)};
-      } else if (last_chunk_options ==
+      } else if (!ignore_garbage &&
+                 last_chunk_options ==
                      last_chunk_handling_options::stop_before_partial &&
                  (idx != 1) && ((idx + padded_characters) & 3) != 0) {
         // Rewind src to before partial chunk
@@ -102,7 +135,8 @@ base64_tail_decode(char *dst, const char_type *src, size_t length,
         if (idx == 2) {
           uint32_t triple =
               (uint32_t(buffer[0]) << 3 * 6) + (uint32_t(buffer[1]) << 2 * 6);
-          if ((last_chunk_options == last_chunk_handling_options::strict) &&
+          if (!ignore_garbage &&
+              (last_chunk_options == last_chunk_handling_options::strict) &&
               (triple & 0xffff)) {
             return {BASE64_EXTRA_BITS, size_t(src - srcinit),
                     size_t(dst - dstinit)};
@@ -120,7 +154,8 @@ base64_tail_decode(char *dst, const char_type *src, size_t length,
           uint32_t triple = (uint32_t(buffer[0]) << 3 * 6) +
                             (uint32_t(buffer[1]) << 2 * 6) +
                             (uint32_t(buffer[2]) << 1 * 6);
-          if ((last_chunk_options == last_chunk_handling_options::strict) &&
+          if (!ignore_garbage &&
+              (last_chunk_options == last_chunk_handling_options::strict) &&
               (triple & 0xff)) {
             return {BASE64_EXTRA_BITS, size_t(src - srcinit),
                     size_t(dst - dstinit)};
@@ -134,7 +169,7 @@ base64_tail_decode(char *dst, const char_type *src, size_t length,
             std::memcpy(dst, &triple, 2);
           }
           dst += 2;
-        } else if (idx == 1) {
+        } else if (!ignore_garbage && idx == 1) {
           return {BASE64_INPUT_REMAINDER, size_t(src - srcinit),
                   size_t(dst - dstinit)};
         }
@@ -188,6 +223,9 @@ result base64_tail_decode_safe(
   const uint32_t *d3 = (options & base64_url)
                            ? tables::base64::base64_url::d3
                            : tables::base64::base64_default::d3;
+  const bool ignore_garbage =
+      (options == base64_options::base64_url_accept_garbage) ||
+      (options == base64_options::base64_default_accept_garbage);
 
   const char_type *srcend = src + length;
   const char_type *srcinit = src;
@@ -218,6 +256,28 @@ result base64_tail_decode_safe(
     idx = 0;
     const char_type *srccur = src;
     // We need at least four characters.
+#ifdef __clang__
+    // If possible, we read four characters at a time. (It is an optimization.)
+    if (ignore_garbage && src + 4 <= srcend) {
+      char_type c0 = src[0];
+      char_type c1 = src[1];
+      char_type c2 = src[2];
+      char_type c3 = src[3];
+      uint8_t code0 = to_base64[uint8_t(c0)];
+      uint8_t code1 = to_base64[uint8_t(c1)];
+      uint8_t code2 = to_base64[uint8_t(c2)];
+      uint8_t code3 = to_base64[uint8_t(c3)];
+      buffer[idx] = code0;
+      idx += (is_eight_byte(c0) && code0 <= 63);
+      buffer[idx] = code1;
+      idx += (is_eight_byte(c1) && code1 <= 63);
+      buffer[idx] = code2;
+      idx += (is_eight_byte(c2) && code2 <= 63);
+      buffer[idx] = code3;
+      idx += (is_eight_byte(c3) && code3 <= 63);
+      src += 4;
+    }
+#endif
     while (idx < 4 && src < srcend) {
       char_type c = *src;
       uint8_t code = to_base64[uint8_t(c)];
@@ -225,22 +285,25 @@ result base64_tail_decode_safe(
       buffer[idx] = uint8_t(code);
       if (is_eight_byte(c) && code <= 63) {
         idx++;
-      } else if (code > 64 || !scalar::base64::is_eight_byte(c)) {
+      } else if (!ignore_garbage &&
+                 (code > 64 || !scalar::base64::is_eight_byte(c))) {
         outlen = size_t(dst - dstinit);
         srcr = src;
         return {INVALID_BASE64_CHARACTER, size_t(src - srcinit)};
       } else {
-        // We have a space or a newline. We ignore it.
+        // We have a space or a newline or garbage. We ignore it.
       }
       src++;
     }
     if (idx != 4) {
-      if (last_chunk_options == last_chunk_handling_options::strict &&
+      if (!ignore_garbage &&
+          last_chunk_options == last_chunk_handling_options::strict &&
           ((idx + padded_characters) & 3) != 0) {
         outlen = size_t(dst - dstinit);
         srcr = src;
         return {BASE64_INPUT_REMAINDER, size_t(src - srcinit)};
-      } else if (last_chunk_options ==
+      } else if (!ignore_garbage &&
+                 last_chunk_options ==
                      last_chunk_handling_options::stop_before_partial &&
                  ((idx + padded_characters) & 3) != 0) {
         // Rewind src to before partial chunk
@@ -253,7 +316,7 @@ result base64_tail_decode_safe(
           outlen = size_t(dst - dstinit);
           srcr = src;
           return {SUCCESS, size_t(dst - dstinit)};
-        } else if (idx == 1) {
+        } else if (!ignore_garbage && idx == 1) {
           // Error: Incomplete chunk of length 1 is invalid in loose mode
           outlen = size_t(dst - dstinit);
           srcr = src;
@@ -269,7 +332,8 @@ result base64_tail_decode_safe(
           uint32_t triple = 0;
           if (idx == 2) {
             triple = (uint32_t(buffer[0]) << 18) + (uint32_t(buffer[1]) << 12);
-            if ((last_chunk_options == last_chunk_handling_options::strict) &&
+            if (!ignore_garbage &&
+                (last_chunk_options == last_chunk_handling_options::strict) &&
                 (triple & 0xffff)) {
               srcr = src;
               return {BASE64_EXTRA_BITS, size_t(src - srcinit)};
@@ -281,7 +345,8 @@ result base64_tail_decode_safe(
           } else if (idx == 3) {
             triple = (uint32_t(buffer[0]) << 18) + (uint32_t(buffer[1]) << 12) +
                      (uint32_t(buffer[2]) << 6);
-            if ((last_chunk_options == last_chunk_handling_options::strict) &&
+            if (!ignore_garbage &&
+                (last_chunk_options == last_chunk_handling_options::strict) &&
                 (triple & 0xff)) {
               srcr = src;
               return {BASE64_EXTRA_BITS, size_t(src - srcinit)};
