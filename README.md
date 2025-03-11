@@ -16,6 +16,7 @@ simdutf: Unicode validation and transcoding at billions of characters per second
   - [Usage (Usage)](#usage-usage)
   - [Usage (CMake)](#usage-cmake)
   - [Single-header version](#single-header-version)
+  - [Single-header version with limited features](#single-header-version-with-limited-features)
   - [Packages](#packages)
   - [Example](#example)
   - [API](#api)
@@ -150,7 +151,7 @@ Linux or macOS users might follow the following instructions if they have a rece
 
 1. Pull the library in a directory
    ```
-   wget https://github.com/simdutf/simdutf/releases/download/v5.7.2/singleheader.zip
+   wget https://github.com/simdutf/simdutf/releases/download/v6.1.0/singleheader.zip
    unzip singleheader.zip
    ```
    You can replace `wget` by `curl -OL https://...` if you prefer.
@@ -221,7 +222,7 @@ Single-header version
 You can create a single-header version of the library where
 all of the code is put into two files (`simdutf.h` and `simdutf.cpp`).
 We publish a zip archive containing these files, e.g., see
-https://github.com/simdutf/simdutf/releases/download/v5.7.2/singleheader.zip
+https://github.com/simdutf/simdutf/releases/download/v6.1.0/singleheader.zip
 
 You may generate it on your own using a Python script.
 
@@ -238,6 +239,46 @@ cd singleheader
 c++ -o amalgamation_demo amalgamation_demo.cpp -std=c++17
 ./amalgamation_demo
 ```
+
+Single-header version with limited features
+-------------------------------------------
+
+When creating a single-header version, it is possible to limit which
+features are enabled. Then the API of library is limited too and the
+amalgamated sources do not include code related to disabled features.
+
+The script `singleheader/amalgamate.py` accepts the following parameters:
+
+* `--with-utf8` - procedures related only to UTF-8 encoding (like string validation);
+* `--with-utf16` - likewise: only UTF-16 encoding;
+* `--with-utf32` - likewise: only UTF-32 encoding;
+* `--with-ascii` - procedures related to ASCII encoding;
+* `--with-latin1` - convert between selected UTF encodings and Latin1;
+* `--with-base64` - procedures related to Base64 encoding;
+* `--with-detect-enc` - enable detect encoding.
+
+If we need conversion between different encodings, like UTF-8 and UTF-32, then
+these two features have to be enabled.
+
+The amalgamated sources set to 1 the following preprocesor defines:
+
+* `SIMDUTF_FEATURE_UTF8`,
+* `SIMDUTF_FEATURE_UTF16`,
+* `SIMDUTF_FEATURE_UTF32`,
+* `SIMDUTF_FEATURE_ASCII`,
+* `SIMDUTF_FEATURE_LATIN1`,
+* `SIMDUTF_FEATURE_BASE64`,
+* `SIMDUTF_FEATURE_DETECT_ENCODING`.
+
+Thus, when it is needed to make sure the correct set of features are
+enabled, we may test it using preprocessor:
+
+```cpp
+#if SIMDUTF_FEATURE_UTF16 || SIMDUTF_FEATURE_UTF32
+    #error "Please amalagamate simdutf without UTF-16 and UTF-32"
+#endif
+```
+
 
 Packages
 ------
@@ -331,13 +372,13 @@ auto cpp20 = simdutf::autodetect_encoding(data);
 ```
 
 The span overloads use std::span for UTF-16 and UTF-32. For latin1, UTF-8,
-"binary" (used by the base64 functions) anything that has a `.size()` and `.data()
-that returns a pointer to a byte-like type will be accepted as a span. This
-makes it possible to directly pass std::string, std::string_view, std::vector,
-std::array and std::span to the functions. The reason for allowing all
-byte-like types in the api (as opposed to only `std::span<char>`) is to make it
-easy to interface with whatever data the user may have, without having to
-resort to casting.
+"binary" (used by the base64 functions) anything that has a `.size()` and
+`.data()` that returns a pointer to a byte-like type will be accepted as a
+span. This makes it possible to directly pass std::string, std::string_view,
+std::vector, std::array and std::span to the functions. The reason for allowing
+all byte-like types in the api (as opposed to only `std::span<char>`) is to
+make it easy to interface with whatever data the user may have, without having
+to resort to casting.
 
 We have basic functions to detect the type of an input. They return an integer defined by
 the following `enum`.
@@ -348,7 +389,7 @@ enum encoding_type {
         UTF16_LE = 2,   // BOM 0xff 0xfe
         UTF16_BE = 4,   // BOM 0xfe 0xff
         UTF32_LE = 8,   // BOM 0xff 0xfe 0x00 0x00
-        UTF32_BE = 16,   // BOM 0x00 0x00 0xfe 0xff
+        UTF32_BE = 16,  // BOM 0x00 0x00 0xfe 0xff
 
         unspecified = 0
 };
@@ -366,7 +407,7 @@ enum encoding_type {
  * @param length the length of the string in bytes.
  * @return the detected encoding type
  */
-simdutf_warn_unused simdutf::encoding_type autodetect_encoding(const char * input, size_t length) noexcept;
+simdutf_warn_unused simdutf::encoding_type autodetect_encoding(const char *input, size_t length) noexcept;
 
 /**
  * Autodetect the possible encodings of the input in one pass.
@@ -379,7 +420,7 @@ simdutf_warn_unused simdutf::encoding_type autodetect_encoding(const char * inpu
  * @param length the length of the string in bytes.
  * @return the detected encoding type
  */
-simdutf_warn_unused int detect_encodings(const char * input, size_t length) noexcept;
+simdutf_warn_unused int detect_encodings(const char *input, size_t length) noexcept;
 ```
 
 

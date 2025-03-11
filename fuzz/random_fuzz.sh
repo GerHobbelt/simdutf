@@ -86,6 +86,31 @@ else
     BENICE=""
 fi
 
+# to get vector support on riscv64, we need to specify the arch
+MARCHFLAGS=
+case $(uname -m) in
+    x86_64)
+    # debian and rocky linux amd64
+    ;;
+    amd64)
+    # freebsd amd64
+    ;;
+    aarch64)
+    # debian arm64
+    ;;
+    arm64)
+    # freebsd arm64
+    ;;
+    arm)
+    # freebsd armv7
+    ;;
+    riscv64)
+	MARCHFLAGS="-march=rv64gcv"
+	;;
+    *)
+	;;
+esac
+
 while true ; do
 
     echo "pulling the latest changes"
@@ -94,7 +119,7 @@ while true ; do
     
     export CXX=$(selectrandomclang)
     optlevel=$(selectrandomoptlevel)
-    export CXXFLAGS="$(selectsanitizerflags) -g -O${optlevel}"
+    export CXXFLAGS="$(selectsanitizerflags) -g -O${optlevel} ${MARCHFLAGS}"
     export LIB_FUZZING_ENGINE="-fsanitize=fuzzer"
     export OUT=fuzz/out
     export WORK=fuzz/work
@@ -108,6 +133,18 @@ while true ; do
 
     fuzzers="base64 conversion misc roundtrip"
     for fuzzer in $(echo $fuzzers|tr ' ' '\n' |sort --random-sort); do
+	if [ ! -d  "$corpusdir/$fuzzer" ] ; then
+	    # populate with the backup corpus from oss-fuzz
+	    mkdir -p $TMPWORKDIR/ossfuzzcorpus/$fuzzer
+	    cd $TMPWORKDIR/ossfuzzcorpus/$fuzzer
+	    # in case this fails, keep going.
+	    if wget "https://storage.googleapis.com/simdutf-backup.clusterfuzz-external.appspot.com/corpus/libFuzzer/simdutf_${fuzzer}/public.zip" ;then
+		mkdir -p "$corpusdir/$fuzzer"
+		unzip -q public.zip -d "$corpusdir/$fuzzer"
+		rm public.zip
+	    fi
+	    cd $src
+	fi
 	mkdir -p "$corpusdir/$fuzzer"
 	$BENICE fuzz/out/$fuzzer -timeout=100 -max_total_time=3600 -jobs=$(nproc) -workers=$(nproc) "$corpusdir/$fuzzer"
     done
