@@ -4,23 +4,6 @@ namespace {
 namespace utf16 {
 
 template <endianness big_endian>
-simdutf_really_inline size_t count_code_points(const char16_t *in,
-                                               size_t size) {
-  size_t pos = 0;
-  size_t count = 0;
-  for (; pos < size / 32 * 32; pos += 32) {
-    simd16x32<uint16_t> input(reinterpret_cast<const uint16_t *>(in + pos));
-    if (!match_system(big_endian)) {
-      input.swap_bytes();
-    }
-    uint64_t not_pair = input.not_in_range(0xDC00, 0xDFFF);
-    count += count_ones(not_pair) / 2;
-  }
-  return count +
-         scalar::utf16::count_code_points<big_endian>(in + pos, size - pos);
-}
-
-template <endianness big_endian>
 simdutf_really_inline size_t utf8_length_from_utf16(const char16_t *in,
                                                     size_t size) {
   size_t pos = 0;
@@ -44,27 +27,6 @@ simdutf_really_inline size_t utf8_length_from_utf16(const char16_t *in,
   }
   return count + scalar::utf16::utf8_length_from_utf16<big_endian>(in + pos,
                                                                    size - pos);
-}
-
-template <endianness big_endian>
-simdutf_really_inline size_t utf32_length_from_utf16(const char16_t *in,
-                                                     size_t size) {
-  return count_code_points<big_endian>(in, size);
-}
-
-simdutf_really_inline void
-change_endianness_utf16(const char16_t *in, size_t size, char16_t *output) {
-  size_t pos = 0;
-
-  while (pos < size / 32 * 32) {
-    simd16x32<uint16_t> input(reinterpret_cast<const uint16_t *>(in + pos));
-    input.swap_bytes();
-    input.store(reinterpret_cast<uint16_t *>(output));
-    pos += 32;
-    output += 32;
-  }
-
-  scalar::utf16::change_endianness_utf16(in + pos, size - pos, output);
 }
 
 } // namespace utf16
