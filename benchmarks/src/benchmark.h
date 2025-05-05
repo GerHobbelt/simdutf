@@ -89,6 +89,13 @@ private:
   register_function(std::string name, Fn function, simdutf::encoding_type enc1,
                     simdutf::encoding_type enc2, simdutf::encoding_type enc3);
 
+#ifdef ICU_AVAILABLE
+  bool icu_show_version = true;
+#endif
+#ifdef _LIBICONV_VERSION
+  bool iconv_show_version = true;
+#endif
+
 private:
   void run_validate_utf8(const simdutf::implementation &implementation,
                          size_t iterations);
@@ -112,6 +119,12 @@ private:
   void
   run_utf8_length_from_latin1(const simdutf::implementation &implementation,
                               size_t iterations);
+  void
+  run_utf8_length_from_utf16le(const simdutf::implementation &implementation,
+                               size_t iterations);
+  void
+  run_utf8_length_from_utf16be(const simdutf::implementation &implementation,
+                               size_t iterations);
   void run_utf8_length_from_utf32(const simdutf::implementation &implementation,
                                   size_t iterations);
   void run_convert_latin1_to_utf8(const simdutf::implementation &implementation,
