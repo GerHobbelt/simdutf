@@ -330,13 +330,9 @@ simdutf_warn_unused bool
 implementation::validate_utf16be(const char16_t *buf,
                                  size_t len) const noexcept {
   const char16_t *end = buf + len;
-  const __m512i byteflip = _mm512_setr_epi64(
-      0x0607040502030001, 0x0e0f0c0d0a0b0809, 0x0607040502030001,
-      0x0e0f0c0d0a0b0809, 0x0607040502030001, 0x0e0f0c0d0a0b0809,
-      0x0607040502030001, 0x0e0f0c0d0a0b0809);
+
   for (; end - buf >= 32;) {
-    __m512i in =
-        _mm512_shuffle_epi8(_mm512_loadu_si512((__m512i *)buf), byteflip);
+    __m512i in = _mm512_slli_epi32(_mm512_loadu_si512((__m512i *)buf), 8);
     __m512i diff = _mm512_sub_epi16(in, _mm512_set1_epi16(uint16_t(0xD800)));
     __mmask32 surrogates =
         _mm512_cmplt_epu16_mask(diff, _mm512_set1_epi16(uint16_t(0x0800)));
@@ -360,9 +356,8 @@ implementation::validate_utf16be(const char16_t *buf,
     }
   }
   if (buf < end) {
-    __m512i in = _mm512_shuffle_epi8(
-        _mm512_maskz_loadu_epi16((1U << (end - buf)) - 1, (__m512i *)buf),
-        byteflip);
+    __m512i in = _mm512_slli_epi16(
+        _mm512_maskz_loadu_epi16((1U << (end - buf)) - 1, (__m512i *)buf), 8);
     __m512i diff = _mm512_sub_epi16(in, _mm512_set1_epi16(uint16_t(0xD800)));
     __mmask32 surrogates =
         _mm512_cmplt_epu16_mask(diff, _mm512_set1_epi16(uint16_t(0x0800)));
@@ -440,13 +435,9 @@ simdutf_warn_unused result implementation::validate_utf16be_with_errors(
     const char16_t *buf, size_t len) const noexcept {
   const char16_t *start_buf = buf;
   const char16_t *end = buf + len;
-  const __m512i byteflip = _mm512_setr_epi64(
-      0x0607040502030001, 0x0e0f0c0d0a0b0809, 0x0607040502030001,
-      0x0e0f0c0d0a0b0809, 0x0607040502030001, 0x0e0f0c0d0a0b0809,
-      0x0607040502030001, 0x0e0f0c0d0a0b0809);
+
   for (; end - buf >= 32;) {
-    __m512i in =
-        _mm512_shuffle_epi8(_mm512_loadu_si512((__m512i *)buf), byteflip);
+    __m512i in = _mm512_slli_epi16(_mm512_loadu_si512((__m512i *)buf), 8);
     __m512i diff = _mm512_sub_epi16(in, _mm512_set1_epi16(uint16_t(0xD800)));
     __mmask32 surrogates =
         _mm512_cmplt_epu16_mask(diff, _mm512_set1_epi16(uint16_t(0x0800)));
@@ -475,9 +466,8 @@ simdutf_warn_unused result implementation::validate_utf16be_with_errors(
     }
   }
   if (buf < end) {
-    __m512i in = _mm512_shuffle_epi8(
-        _mm512_maskz_loadu_epi16((1U << (end - buf)) - 1, (__m512i *)buf),
-        byteflip);
+    __m512i in = _mm512_slli_epi16(
+        _mm512_maskz_loadu_epi16((1U << (end - buf)) - 1, (__m512i *)buf), 8);
     __m512i diff = _mm512_sub_epi16(in, _mm512_set1_epi16(uint16_t(0xD800)));
     __mmask32 surrogates =
         _mm512_cmplt_epu16_mask(diff, _mm512_set1_epi16(uint16_t(0x0800)));
@@ -1613,21 +1603,29 @@ simdutf_warn_unused size_t implementation::utf32_length_from_utf8(
 simdutf_warn_unused result implementation::base64_to_binary(
     const char *input, size_t length, char *output, base64_options options,
     last_chunk_handling_options last_chunk_options) const noexcept {
-  if (options & base64_url) {
-    if (options == base64_options::base64_url_accept_garbage) {
-      return compress_decode_base64<true, true>(output, input, length, options,
-                                                last_chunk_options);
+  if (options & base64_default_or_url) {
+    if (options == base64_options::base64_default_or_url_accept_garbage) {
+      return compress_decode_base64<false, true, true>(
+          output, input, length, options, last_chunk_options);
     } else {
-      return compress_decode_base64<true, false>(output, input, length, options,
-                                                 last_chunk_options);
+      return compress_decode_base64<false, false, true>(
+          output, input, length, options, last_chunk_options);
+    }
+  } else if (options & base64_url) {
+    if (options == base64_options::base64_url_accept_garbage) {
+      return compress_decode_base64<true, true, false>(
+          output, input, length, options, last_chunk_options);
+    } else {
+      return compress_decode_base64<true, false, false>(
+          output, input, length, options, last_chunk_options);
     }
   } else {
     if (options == base64_options::base64_default_accept_garbage) {
-      return compress_decode_base64<false, true>(output, input, length, options,
-                                                 last_chunk_options);
+      return compress_decode_base64<false, true, false>(
+          output, input, length, options, last_chunk_options);
     } else {
-      return compress_decode_base64<false, false>(output, input, length,
-                                                  options, last_chunk_options);
+      return compress_decode_base64<false, false, false>(
+          output, input, length, options, last_chunk_options);
     }
   }
 }
@@ -1635,21 +1633,29 @@ simdutf_warn_unused result implementation::base64_to_binary(
 simdutf_warn_unused full_result implementation::base64_to_binary_details(
     const char *input, size_t length, char *output, base64_options options,
     last_chunk_handling_options last_chunk_options) const noexcept {
-  if (options & base64_url) {
-    if (options == base64_options::base64_url_accept_garbage) {
-      return compress_decode_base64<true, true>(output, input, length, options,
-                                                last_chunk_options);
+  if (options & base64_default_or_url) {
+    if (options == base64_options::base64_default_or_url_accept_garbage) {
+      return compress_decode_base64<false, true, true>(
+          output, input, length, options, last_chunk_options);
     } else {
-      return compress_decode_base64<true, false>(output, input, length, options,
-                                                 last_chunk_options);
+      return compress_decode_base64<false, false, true>(
+          output, input, length, options, last_chunk_options);
+    }
+  } else if (options & base64_url) {
+    if (options == base64_options::base64_url_accept_garbage) {
+      return compress_decode_base64<true, true, false>(
+          output, input, length, options, last_chunk_options);
+    } else {
+      return compress_decode_base64<true, false, false>(
+          output, input, length, options, last_chunk_options);
     }
   } else {
     if (options == base64_options::base64_default_accept_garbage) {
-      return compress_decode_base64<false, true>(output, input, length, options,
-                                                 last_chunk_options);
+      return compress_decode_base64<false, true, false>(
+          output, input, length, options, last_chunk_options);
     } else {
-      return compress_decode_base64<false, false>(output, input, length,
-                                                  options, last_chunk_options);
+      return compress_decode_base64<false, false, false>(
+          output, input, length, options, last_chunk_options);
     }
   }
 }
@@ -1657,21 +1663,29 @@ simdutf_warn_unused full_result implementation::base64_to_binary_details(
 simdutf_warn_unused result implementation::base64_to_binary(
     const char16_t *input, size_t length, char *output, base64_options options,
     last_chunk_handling_options last_chunk_options) const noexcept {
-  if (options & base64_url) {
-    if (options == base64_options::base64_url_accept_garbage) {
-      return compress_decode_base64<true, true>(output, input, length, options,
-                                                last_chunk_options);
+  if (options & base64_default_or_url) {
+    if (options == base64_options::base64_default_or_url_accept_garbage) {
+      return compress_decode_base64<false, true, true>(
+          output, input, length, options, last_chunk_options);
     } else {
-      return compress_decode_base64<true, false>(output, input, length, options,
-                                                 last_chunk_options);
+      return compress_decode_base64<false, false, true>(
+          output, input, length, options, last_chunk_options);
+    }
+  } else if (options & base64_url) {
+    if (options == base64_options::base64_url_accept_garbage) {
+      return compress_decode_base64<true, true, false>(
+          output, input, length, options, last_chunk_options);
+    } else {
+      return compress_decode_base64<true, false, false>(
+          output, input, length, options, last_chunk_options);
     }
   } else {
     if (options == base64_options::base64_default_accept_garbage) {
-      return compress_decode_base64<false, true>(output, input, length, options,
-                                                 last_chunk_options);
+      return compress_decode_base64<false, true, false>(
+          output, input, length, options, last_chunk_options);
     } else {
-      return compress_decode_base64<false, false>(output, input, length,
-                                                  options, last_chunk_options);
+      return compress_decode_base64<false, false, false>(
+          output, input, length, options, last_chunk_options);
     }
   }
 }
@@ -1679,21 +1693,29 @@ simdutf_warn_unused result implementation::base64_to_binary(
 simdutf_warn_unused full_result implementation::base64_to_binary_details(
     const char16_t *input, size_t length, char *output, base64_options options,
     last_chunk_handling_options last_chunk_options) const noexcept {
-  if (options & base64_url) {
-    if (options == base64_options::base64_url_accept_garbage) {
-      return compress_decode_base64<true, true>(output, input, length, options,
-                                                last_chunk_options);
+  if (options & base64_default_or_url) {
+    if (options == base64_options::base64_default_or_url_accept_garbage) {
+      return compress_decode_base64<false, true, true>(
+          output, input, length, options, last_chunk_options);
     } else {
-      return compress_decode_base64<true, false>(output, input, length, options,
-                                                 last_chunk_options);
+      return compress_decode_base64<false, false, true>(
+          output, input, length, options, last_chunk_options);
+    }
+  } else if (options & base64_url) {
+    if (options == base64_options::base64_url_accept_garbage) {
+      return compress_decode_base64<true, true, false>(
+          output, input, length, options, last_chunk_options);
+    } else {
+      return compress_decode_base64<true, false, false>(
+          output, input, length, options, last_chunk_options);
     }
   } else {
     if (options == base64_options::base64_default_accept_garbage) {
-      return compress_decode_base64<false, true>(output, input, length, options,
-                                                 last_chunk_options);
+      return compress_decode_base64<false, true, false>(
+          output, input, length, options, last_chunk_options);
     } else {
-      return compress_decode_base64<false, false>(output, input, length,
-                                                  options, last_chunk_options);
+      return compress_decode_base64<false, false, false>(
+          output, input, length, options, last_chunk_options);
     }
   }
 }

@@ -37,13 +37,16 @@ namespace base64 {
     associated methods that perform actual conversion. Please refer
     to any vectorized implementation to learn the API of these procedures.
 */
-template <bool base64_url, bool ignore_garbage, typename chartype>
+template <bool base64_url, bool ignore_garbage, bool default_or_url,
+          typename chartype>
 full_result
 compress_decode_base64(char *dst, const chartype *src, size_t srclen,
                        base64_options options,
                        last_chunk_handling_options last_chunk_options) {
-  const uint8_t *to_base64 = base64_url ? tables::base64::to_base64_url_value
-                                        : tables::base64::to_base64_value;
+  const uint8_t *to_base64 =
+      default_or_url ? tables::base64::to_base64_default_or_url_value
+                     : (base64_url ? tables::base64::to_base64_url_value
+                                   : tables::base64::to_base64_value);
   size_t equallocation =
       srclen; // location of the first padding character if any
   // skip trailing spaces
@@ -81,7 +84,10 @@ compress_decode_base64(char *dst, const chartype *src, size_t srclen,
     return {SUCCESS, 0, 0};
   }
   char *end_of_safe_64byte_zone =
-      (srclen + 3) / 4 * 3 >= 63 ? dst + (srclen + 3) / 4 * 3 - 63 : dst;
+      dst == nullptr
+          ? nullptr
+          : ((srclen + 3) / 4 * 3 >= 63 ? dst + (srclen + 3) / 4 * 3 - 63
+                                        : dst);
 
   const chartype *const srcinit = src;
   const char *const dstinit = dst;
@@ -98,7 +104,7 @@ compress_decode_base64(char *dst, const chartype *src, size_t srclen,
       src += 64;
       uint64_t error = 0;
       const uint64_t badcharmask =
-          b.to_base64_mask<base64_url, ignore_garbage>(&error);
+          b.to_base64_mask<base64_url, ignore_garbage, default_or_url>(&error);
       if (!ignore_garbage && error) {
         src -= 64;
         const size_t error_offset = trailing_zeroes(error);

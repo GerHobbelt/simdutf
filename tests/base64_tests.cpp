@@ -8,10 +8,106 @@
 #include <memory>
 #include <tuple>
 
-#include <sys/types.h>
 #include <tests/helpers/random_int.h>
 #include <tests/helpers/test.h>
 #include <vector>
+
+TEST(stop_before_partial_one_char) {
+  std::vector<char> base64(5463, 0x20);
+  base64.back() = 0x38; // this is the number 8 (a valid base64 character)
+  std::vector<char> back(0);
+  // with stop_before_partial, we should stop before the last character
+  // and not decode it. There should be no error.
+  // https://tc39.es/proposal-arraybuffer-base64/spec/#sec-frombase64
+  simdutf::result r = implementation.base64_to_binary(
+      base64.data(), base64.size(), back.data(), simdutf::base64_default,
+      simdutf::last_chunk_handling_options::stop_before_partial);
+  ASSERT_EQUAL(r.error, simdutf::error_code::SUCCESS);
+  ASSERT_EQUAL(r.count, 0);
+  size_t buflen = back.size();
+  ASSERT_EQUAL(buflen, 0);
+  r = simdutf::base64_to_binary_safe(
+      base64.data(), base64.size(), back.data(), buflen,
+      simdutf::base64_default,
+      simdutf::last_chunk_handling_options::stop_before_partial);
+  ASSERT_EQUAL(r.error, simdutf::error_code::SUCCESS);
+  ASSERT_EQUAL(buflen, 0);
+  ASSERT_EQUAL(r.count, 5462);
+  back.resize(base64.size());
+  buflen = back.size();
+  r = simdutf::base64_to_binary_safe(
+      base64.data(), base64.size(), back.data(), buflen,
+      simdutf::base64_default,
+      simdutf::last_chunk_handling_options::stop_before_partial);
+  ASSERT_EQUAL(r.error, simdutf::error_code::SUCCESS);
+  ASSERT_EQUAL(buflen, 0);
+  ASSERT_EQUAL(r.count, 5462);
+}
+
+TEST(hybrid_decoding) {
+  std::vector<std::pair<std::string, std::vector<uint8_t>>> test_data = {
+      {"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA__--_--"
+       "_--__AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+       {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0xff, 0xff, 0xbe, 0xff, 0xef, 0xbf, 0xfb, 0xef, 0xff, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}},
+      {"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA__-+_--"
+       "_--/_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+       {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0xff, 0xff, 0xbe, 0xff, 0xef, 0xbf, 0xfb, 0xef, 0xff, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}},
+      {"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA__-+_--"
+       " / "
+       "--/_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+       {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0xff, 0xff, 0xbe, 0xff, 0xef, 0xbf, 0xfb, 0xef, 0xff, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}},
+      {"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//-+/"
+       "--/--/"
+       "_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+       {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0xff, 0xff, 0xbe, 0xff, 0xef, 0xbf, 0xfb, 0xef, 0xff, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}},
+
+  };
+  for (const auto &test : test_data) {
+    const std::string &base64 = test.first;
+    const std::vector<uint8_t> &expected = test.second;
+    std::vector<uint8_t> decoded(simdutf::maximal_binary_length_from_base64(
+        base64.data(), base64.size()));
+    auto r = implementation.base64_to_binary(
+        base64.data(), base64.size(), reinterpret_cast<char *>(decoded.data()),
+        simdutf::base64_default_or_url);
+    ASSERT_EQUAL(r.error, simdutf::error_code::SUCCESS);
+    ASSERT_EQUAL(r.count, expected.size());
+    decoded.resize(r.count);
+    ASSERT_EQUAL(decoded, expected);
+  }
+}
 
 // We may disable base64url tests by commenting out this next line.
 #define SIMDUTF_BASE64URL_TESTS 1
@@ -916,7 +1012,7 @@ TEST(base64_decode_webkit_like_but_random_more_cases) {
       for (size_t i = 0; i < len; i++) {
         source[i] = byte_generator(gen);
       }
-      [[maybe_unused]] const size_t size = implementation.binary_to_base64(
+      simdutf_maybe_unused const size_t size = implementation.binary_to_base64(
           source.data(), source.size(), buffer.data());
       for (size_t removed = 1; !buffer.empty() && removed <= 2; removed++) {
         buffer.pop_back();
@@ -973,7 +1069,7 @@ TEST(base64_decode_webkit_like_but_random_with_spaces_more_cases) {
       for (size_t i = 0; i < len; i++) {
         source[i] = byte_generator(gen);
       }
-      [[maybe_unused]] const size_t size = implementation.binary_to_base64(
+      simdutf_maybe_unused const size_t size = implementation.binary_to_base64(
           source.data(), source.size(), buffer.data());
       buffer = add_simple_spaces(buffer, gen, 5 + len / 4);
       auto is_space = [](char c) {
@@ -1947,10 +2043,8 @@ TEST(doomed_truncated_base64_roundtrip) {
       buffer.resize(size - 3);
       std::vector<char> back(simdutf::maximal_binary_length_from_base64(
           buffer.data(), buffer.size()));
-      for (auto option :
-           {simdutf::last_chunk_handling_options::loose,
-            simdutf::last_chunk_handling_options::strict,
-            simdutf::last_chunk_handling_options::stop_before_partial}) {
+      for (auto option : {simdutf::last_chunk_handling_options::loose,
+                          simdutf::last_chunk_handling_options::strict}) {
         simdutf::result r = implementation.base64_to_binary(
             buffer.data(), buffer.size(), back.data(), simdutf::base64_default,
             option);
@@ -2444,6 +2538,28 @@ TEST(readme_safe) {
   back.resize(limited_length2);
   ASSERT_EQUAL(limited_length2 + limited_length, (len + 3) / 4 * 3);
 }
+
+#if SIMDUTF_SPAN
+TEST(base64_to_binary_safe_span_api_char) {
+  const std::string input{"QWJyYWNhZGFicmEh"};
+  const std::string expected_output{"Abracadabra!"};
+  std::string output(expected_output.size() + 4, '\0');
+  const auto [ret, outlen] = simdutf::base64_to_binary_safe(input, output);
+  ASSERT_EQUAL(ret.error, simdutf::SUCCESS);
+  ASSERT_EQUAL(ret.count, 16); // amount of consumed input
+  ASSERT_EQUAL(outlen, 12);    // how much was written to output
+}
+
+TEST(base64_to_binary_safe_span_api_char16) {
+  const std::u16string input{u"QWJyYWNhZGFicmEh"};
+  const std::string expected_output{"Abracadabra!"};
+  std::string output(expected_output.size() + 4, '\0');
+  const auto [ret, outlen] = simdutf::base64_to_binary_safe(input, output);
+  ASSERT_EQUAL(ret.error, simdutf::SUCCESS);
+  ASSERT_EQUAL(ret.count, 16); // amount of consumed input
+  ASSERT_EQUAL(outlen, 12);    // how much was written to output
+}
+#endif
 
 #if !defined(SIMDUTF_NO_THREADS) && SIMDUTF_ATOMIC_REF
 TEST(atomic_roundtrip_base64) {

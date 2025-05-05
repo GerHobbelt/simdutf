@@ -37,30 +37,42 @@ base64_tail_decode(char *dst, const char_type *src, size_t length,
                                              // '=', typically 0, 1, 2.
                    base64_options options,
                    last_chunk_handling_options last_chunk_options) {
-  // This looks like 5 branches, but we expect the compiler to resolve this to a
-  // single branch:
-  const uint8_t *to_base64 = (options & base64_url)
-                                 ? tables::base64::to_base64_url_value
-                                 : tables::base64::to_base64_value;
-  const uint32_t *d0 = (options & base64_url)
-                           ? tables::base64::base64_url::d0
-                           : tables::base64::base64_default::d0;
-  const uint32_t *d1 = (options & base64_url)
-                           ? tables::base64::base64_url::d1
-                           : tables::base64::base64_default::d1;
-  const uint32_t *d2 = (options & base64_url)
-                           ? tables::base64::base64_url::d2
-                           : tables::base64::base64_default::d2;
-  const uint32_t *d3 = (options & base64_url)
-                           ? tables::base64::base64_url::d3
-                           : tables::base64::base64_default::d3;
+
+  // This looks like 10 branches, but we expect the compiler to resolve this to
+  // two branches (easily predicted):
+  const uint8_t *to_base64 =
+      (options & base64_default_or_url)
+          ? tables::base64::to_base64_default_or_url_value
+          : ((options & base64_url) ? tables::base64::to_base64_url_value
+                                    : tables::base64::to_base64_value);
+  const uint32_t *d0 =
+      (options & base64_default_or_url)
+          ? tables::base64::base64_default_or_url::d0
+          : ((options & base64_url) ? tables::base64::base64_url::d0
+                                    : tables::base64::base64_default::d0);
+  const uint32_t *d1 =
+      (options & base64_default_or_url)
+          ? tables::base64::base64_default_or_url::d1
+          : ((options & base64_url) ? tables::base64::base64_url::d1
+                                    : tables::base64::base64_default::d1);
+  const uint32_t *d2 =
+      (options & base64_default_or_url)
+          ? tables::base64::base64_default_or_url::d2
+          : ((options & base64_url) ? tables::base64::base64_url::d2
+                                    : tables::base64::base64_default::d2);
+  const uint32_t *d3 =
+      (options & base64_default_or_url)
+          ? tables::base64::base64_default_or_url::d3
+          : ((options & base64_url) ? tables::base64::base64_url::d3
+                                    : tables::base64::base64_default::d3);
+  const bool ignore_garbage =
+      (options == base64_options::base64_url_accept_garbage) ||
+      (options == base64_options::base64_default_accept_garbage) ||
+      (options == base64_options::base64_default_or_url_accept_garbage);
 
   const char_type *srcend = src + length;
   const char_type *srcinit = src;
   const char *dstinit = dst;
-  const bool ignore_garbage =
-      (options == base64_options::base64_url_accept_garbage) ||
-      (options == base64_options::base64_default_accept_garbage);
 
   uint32_t x;
   size_t idx;
@@ -78,6 +90,7 @@ base64_tail_decode(char *dst, const char_type *src, size_t length,
       dst += 3;
       src += 4;
     }
+    const char_type *srccur = src;
     idx = 0;
     // we need at least four characters.
 #ifdef __clang__
@@ -127,9 +140,17 @@ base64_tail_decode(char *dst, const char_type *src, size_t length,
       } else if (!ignore_garbage &&
                  last_chunk_options ==
                      last_chunk_handling_options::stop_before_partial &&
-                 (idx != 1) && ((idx + padded_characters) & 3) != 0) {
+                 ((idx + padded_characters) & 3) != 0) {
         // Rewind src to before partial chunk
-        src -= idx;
+        src = srccur;
+        // adjust, skipping ignorable characters
+        for (; src < srcend; src++) {
+          char_type c = *src;
+          uint8_t code = to_base64[uint8_t(c)];
+          if (is_eight_byte(c) && code <= 63) {
+            break;
+          }
+        }
         return {SUCCESS, size_t(src - srcinit), size_t(dst - dstinit)};
       } else {
         if (idx == 2) {
@@ -169,7 +190,9 @@ base64_tail_decode(char *dst, const char_type *src, size_t length,
             std::memcpy(dst, &triple, 2);
           }
           dst += 2;
-        } else if (!ignore_garbage && idx == 1) {
+        } else if (!ignore_garbage && idx == 1 &&
+                   last_chunk_options !=
+                       last_chunk_handling_options::stop_before_partial) {
           return {BASE64_INPUT_REMAINDER, size_t(src - srcinit),
                   size_t(dst - dstinit)};
         }
@@ -193,8 +216,10 @@ base64_tail_decode(char *dst, const char_type *src, size_t length,
 }
 
 // like base64_tail_decode, but it will not write past the end of the output
-// buffer. The outlen paramter is modified to reflect the number of bytes
+// buffer. The outlen parameter is modified to reflect the number of bytes
 // written. This functions assumes that the padding (=) has been removed.
+//
+// The caller is expected to have the case where length == 0.
 template <class char_type>
 result base64_tail_decode_safe(
     char *dst, size_t &outlen, const char_type *&srcr, size_t length,
@@ -203,29 +228,41 @@ result base64_tail_decode_safe(
     base64_options options, last_chunk_handling_options last_chunk_options) {
   const char_type *src = srcr;
   if (length == 0) {
+    // This case should be handled by the caller.
     outlen = 0;
     return {SUCCESS, 0};
   }
-  // This looks like 5 branches, but we expect the compiler to resolve this to a
-  // single branch:
-  const uint8_t *to_base64 = (options & base64_url)
-                                 ? tables::base64::to_base64_url_value
-                                 : tables::base64::to_base64_value;
-  const uint32_t *d0 = (options & base64_url)
-                           ? tables::base64::base64_url::d0
-                           : tables::base64::base64_default::d0;
-  const uint32_t *d1 = (options & base64_url)
-                           ? tables::base64::base64_url::d1
-                           : tables::base64::base64_default::d1;
-  const uint32_t *d2 = (options & base64_url)
-                           ? tables::base64::base64_url::d2
-                           : tables::base64::base64_default::d2;
-  const uint32_t *d3 = (options & base64_url)
-                           ? tables::base64::base64_url::d3
-                           : tables::base64::base64_default::d3;
+  // This looks like 10 branches, but we expect the compiler to resolve this to
+  // two branches (easily predicted):
+  const uint8_t *to_base64 =
+      (options & base64_default_or_url)
+          ? tables::base64::to_base64_default_or_url_value
+          : ((options & base64_url) ? tables::base64::to_base64_url_value
+                                    : tables::base64::to_base64_value);
+  const uint32_t *d0 =
+      (options & base64_default_or_url)
+          ? tables::base64::base64_default_or_url::d0
+          : ((options & base64_url) ? tables::base64::base64_url::d0
+                                    : tables::base64::base64_default::d0);
+  const uint32_t *d1 =
+      (options & base64_default_or_url)
+          ? tables::base64::base64_default_or_url::d1
+          : ((options & base64_url) ? tables::base64::base64_url::d1
+                                    : tables::base64::base64_default::d1);
+  const uint32_t *d2 =
+      (options & base64_default_or_url)
+          ? tables::base64::base64_default_or_url::d2
+          : ((options & base64_url) ? tables::base64::base64_url::d2
+                                    : tables::base64::base64_default::d2);
+  const uint32_t *d3 =
+      (options & base64_default_or_url)
+          ? tables::base64::base64_default_or_url::d3
+          : ((options & base64_url) ? tables::base64::base64_url::d3
+                                    : tables::base64::base64_default::d3);
   const bool ignore_garbage =
       (options == base64_options::base64_url_accept_garbage) ||
-      (options == base64_options::base64_default_accept_garbage);
+      (options == base64_options::base64_default_accept_garbage) ||
+      (options == base64_options::base64_default_or_url_accept_garbage);
 
   const char_type *srcend = src + length;
   const char_type *srcinit = src;
@@ -281,7 +318,6 @@ result base64_tail_decode_safe(
     while (idx < 4 && src < srcend) {
       char_type c = *src;
       uint8_t code = to_base64[uint8_t(c)];
-
       buffer[idx] = uint8_t(code);
       if (is_eight_byte(c) && code <= 63) {
         idx++;
@@ -298,7 +334,7 @@ result base64_tail_decode_safe(
     if (idx != 4) {
       if (!ignore_garbage &&
           last_chunk_options == last_chunk_handling_options::strict &&
-          ((idx + padded_characters) & 3) != 0) {
+          (idx != 1) && ((idx + padded_characters) & 3) != 0) {
         outlen = size_t(dst - dstinit);
         srcr = src;
         return {BASE64_INPUT_REMAINDER, size_t(src - srcinit)};
@@ -308,6 +344,14 @@ result base64_tail_decode_safe(
                  ((idx + padded_characters) & 3) != 0) {
         // Rewind src to before partial chunk
         srcr = srccur;
+        // adjust, skipping ignorable characters
+        for (; srcr < srcend; srcr++) {
+          char_type c = *srcr;
+          uint8_t code = to_base64[uint8_t(c)];
+          if (is_eight_byte(c) && code <= 63) {
+            break;
+          }
+        }
         outlen = size_t(dst - dstinit);
         return {SUCCESS, size_t(dst - dstinit)};
       } else { // loose mode
@@ -316,7 +360,9 @@ result base64_tail_decode_safe(
           outlen = size_t(dst - dstinit);
           srcr = src;
           return {SUCCESS, size_t(dst - dstinit)};
-        } else if (!ignore_garbage && idx == 1) {
+        } else if (!ignore_garbage && idx == 1 &&
+                   last_chunk_options !=
+                       last_chunk_handling_options::stop_before_partial) {
           // Error: Incomplete chunk of length 1 is invalid in loose mode
           outlen = size_t(dst - dstinit);
           srcr = src;
@@ -326,7 +372,7 @@ result base64_tail_decode_safe(
           size_t required_space = (idx == 2) ? 1 : 2;
           if (size_t(dstend - dst) < required_space) {
             outlen = size_t(dst - dstinit);
-            srcr = src;
+            srcr = srccur;
             return {OUTPUT_BUFFER_TOO_SMALL, size_t(srccur - srcinit)};
           }
           uint32_t triple = 0;
@@ -366,7 +412,7 @@ result base64_tail_decode_safe(
 
     if (dstend - dst < 3) {
       outlen = size_t(dst - dstinit);
-      srcr = src;
+      srcr = srccur;
       return {OUTPUT_BUFFER_TOO_SMALL, size_t(srccur - srcinit)};
     }
     uint32_t triple = (uint32_t(buffer[0]) << 18) +

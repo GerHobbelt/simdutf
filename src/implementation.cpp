@@ -2,6 +2,9 @@
 #include <initializer_list>
 #include <climits>
 #include <type_traits>
+#if SIMDUTF_ATOMIC_REF
+  #include "scalar/atomic_util.h"
+#endif
 
 static_assert(sizeof(uint8_t) == sizeof(char),
               "simdutf requires that uint8_t be a char");
@@ -1517,26 +1520,40 @@ simdutf_warn_unused result atomic_base64_to_binary_safe_impl(
     base64_options options,
     last_chunk_handling_options last_chunk_handling_options,
     bool decode_up_to_bad_char) noexcept {
-  static_assert(std::atomic_ref<char_type>::required_alignment ==
-                    sizeof(char_type),
-                "std::atomic_ref requires the same alignment as char_type");
-  std::array<char, 4096> temp_buffer;
+    #if defined(FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION)
+  // We use a smaller buffer during fuzzing to more easily detect bugs.
+  constexpr size_t buffer_size = 128;
+    #else
+  // Arbitrary block sizes: 4KB for input.
+  constexpr size_t buffer_size = 4096;
+    #endif
+  std::array<char, buffer_size> temp_buffer;
   const char_type *input_init = input;
   size_t actual_out = 0;
   while (true) {
     const bool last_chunk = (temp_buffer.size() >= outlen - actual_out);
     size_t temp_outlen = (std::min)(temp_buffer.size(), outlen - actual_out);
-
     result r = base64_to_binary_safe(
         input, length, temp_buffer.data(), temp_outlen, options,
         last_chunk_handling_options, decode_up_to_bad_char);
+    // We processed r.count characters of input.
+    // We wrote temp_outlen bytes to temp_buffer.
+    // If there is no ignorable characters,
+    // we should expect that values/4.0*3 == temp_outlen,
+    // except maybe at the tail end of the string.
+
+    //
+    // We are assuming that when r.error == error_code::OUTPUT_BUFFER_TOO_SMALL,
+    // we truncate the results so that a number of base64 characters divisible
+    // by four is processed.
+    //
+
+    //
     // We wrote temp_outlen bytes to temp_buffer.
     // We need to copy them to output.
     // Copy with relaxed atomic operations to the output
-    for (size_t i = 0; i < temp_outlen; ++i) {
-      std::atomic_ref<char>(output[actual_out + i])
-          .store(temp_buffer[i], std::memory_order_relaxed);
-    }
+    simdutf::scalar::memcpy_atomic_write(output + actual_out,
+                                         temp_buffer.data(), temp_outlen);
     actual_out += temp_outlen;
     length -= r.count;
     input += r.count;
@@ -2098,6 +2115,7 @@ simdutf_warn_unused result slow_base64_to_binary_safe_impl(
     }
   }
   if (length == 0) {
+    outlen = 0;
     if (!ignore_garbage && equalsigns > 0) {
       if (last_chunk_options == last_chunk_handling_options::strict) {
         return {BASE64_INPUT_REMAINDER, 0};
@@ -2181,12 +2199,56 @@ simdutf_warn_unused result base64_to_binary_safe_impl(
     }
     return r;
   }
-  // The output buffer is maybe too small. We will decode a truncated version of
-  // the input.
-  size_t outlen3 = outlen / 3 * 3; // round down to multiple of 3
-  size_t safe_input = base64_length_from_binary(outlen3, options);
+
+  //
+  //
+  // We may not have enough space in the output buffer.
+  // So we may need to decode in two steps.
+  //
+  // We can split the input in two parts:
+  // - the first part is small enough so that we are sure that we can decode
+  //   it in the output buffer
+  // - the second part is the rest of the input buffer
+  //   We will decode it in a separate call to base64_tail_decode_safe.
+  //   This is the slow path.
+  //
+  // Now, there is a potential problem with the first part: it may be truncated.
+  // Thus, for example, we might have something like:
+  //
+  // [ AAAA   A   B     A      ][ C]
+  //
+  // where I have marked the two regions with square brakets.
+  // So in the first step, we do not what to do to partial decoding at all.
+  //
+  // Thus we will decode the first part using the stop_before_partial model
+  // no matter what the last_chunk_handling_options provided by the user is.
+  //
+  // So it works like this... given
+  // [ AAAA   A   B     A          C]
+  //
+  // We first select a small enough prefix so that we are sure we can
+  // decode it in the output buffer.
+  //
+  // [ AAAA   A   B     A      ][ C]
+  //
+  // Next we call our function and we decode the first part.
+  // It returns both the number of bytes written to the output buffer and the
+  // number of characters read from the input buffer.
+  //
+  // We resplit the input accordingly:
+  //
+  // [ AAAA][   A   B     A       C]
+  //
+  // And then we process the last part using a safe function. In this later
+  // case, we use last_chunk_handling_options provided by the user.
+  //
+  // We then need to combine the two results.
+  //
+  const size_t safe_input = base64_length_from_binary(outlen / 3 * 3, options);
   full_result r = get_default_implementation()->base64_to_binary_details(
-      input, safe_input, output, options, loose);
+      input, safe_input, output, options, stop_before_partial);
+  const size_t input_index = r.input_count;
+  const size_t output_index = r.output_count;
   if (r.error == error_code::INVALID_BASE64_CHARACTER) {
     if (decode_up_to_bad_char) { // We need to use the slow path because we want
                                  // to make sure that
@@ -2197,28 +2259,23 @@ simdutf_warn_unused result base64_to_binary_safe_impl(
     }
     return r;
   }
-  size_t offset =
-      (r.error == error_code::BASE64_INPUT_REMAINDER)
-          ? 1
-          : ((r.output_count % 3) == 0 ? 0 : (r.output_count % 3) + 1);
-  size_t output_index = r.output_count - (r.output_count % 3);
-  size_t input_index = safe_input;
-  // offset is a value that is no larger than 3. We backtrack
-  // by up to offset characters + an undetermined number of
-  // white space characters. It is expected that the next loop
-  // runs at most 3 times + the number of white space characters
-  // in between them, so we are not worried about performance.
-  while (offset > 0 && input_index > 0) {
-    chartype c = input[--input_index];
-    if (scalar::base64::is_ascii_white_space(c)) {
-      // skipping
-    } else {
-      offset--;
-    }
-  }
+  //
+  // At this point, we have decoded up to input_index characters, and we have
+  // written output_index characters to the output buffer.
+  // If there are no ignorable character, we would expect that
+  // input_index / 4 * 3 == output_index
+  //
+  // No matter what, at this point, the number of base64 characters in the
+  // range [0, input_index) is a multiple of 4.
+
+  // Now we have to decode the rest of the input buffer.
   size_t remaining_out = outlen - output_index;
   const chartype *tail_input = input + input_index;
   size_t tail_length = length - input_index;
+  // We need to count the number of padding characters (if any)
+  // because base64_tail_decode_safe expects us to do it.
+  size_t equallocation =
+      length; // location of the first padding character if any
   while (tail_length > 0 &&
          scalar::base64::is_ascii_white_space(tail_input[tail_length - 1])) {
     tail_length--;
@@ -2227,19 +2284,53 @@ simdutf_warn_unused result base64_to_binary_safe_impl(
   if (tail_length > 0 && tail_input[tail_length - 1] == '=') {
     tail_length--;
     padding_characts++;
+    equallocation = tail_length + input_index;
     while (tail_length > 0 &&
            scalar::base64::is_ascii_white_space(tail_input[tail_length - 1])) {
       tail_length--;
     }
     if (tail_length > 0 && tail_input[tail_length - 1] == '=') {
       tail_length--;
+      equallocation = tail_length + input_index;
       padding_characts++;
     }
   }
-  // this will advance tail_input and tail_length
+  const bool ignore_garbage = (options & base64_default_accept_garbage) != 0;
+  if (tail_length == 0) {
+    outlen = output_index;
+    if (!ignore_garbage && padding_characts > 0) {
+      if (last_chunk_handling_options == last_chunk_handling_options::strict) {
+        return {BASE64_INPUT_REMAINDER, length};
+      } else if (last_chunk_handling_options ==
+                 last_chunk_handling_options::stop_before_partial) {
+        return {SUCCESS, input_index};
+      }
+      return {INVALID_BASE64_CHARACTER, equallocation};
+    }
+    return {SUCCESS, length};
+  }
+  // the base64_tail_decode_safe function will advance tail_input
   result rr = scalar::base64::base64_tail_decode_safe(
       output + output_index, remaining_out, tail_input, tail_length,
       padding_characts, options, last_chunk_handling_options);
+  //
+  // base64_tail_decode_safe produced 'remaining_out' additonal bytes.
+  // Remeber that we already had decoded 'output_index' bytes.
+  //
+  // We originally had that tail_input = input + input_index, but
+  // tail_input was passed by reference to base64_tail_decode_safe, and
+  // it was modified.
+  //
+  // The number of processed characters is:
+  //  tail_input - (input + input_index).
+  //
+  // If there were no ignorable characters and there is a number of
+  // characters divisible by four, we would expect that
+  //  (tail_input - (input + input_index)) / 4 * 3 == remaining_out
+  // But the tail handling might be an issue if
+  // (tail_input - (input + input_index)) is not divisible by 4.
+  //
+
   outlen = output_index + remaining_out;
   if (last_chunk_handling_options != stop_before_partial &&
       rr.error == error_code::SUCCESS && padding_characts > 0) {
@@ -2248,43 +2339,75 @@ simdutf_warn_unused result base64_to_binary_safe_impl(
       rr.error = error_code::INVALID_BASE64_CHARACTER;
     }
   }
-  if (rr.error == error_code::SUCCESS &&
-      last_chunk_handling_options == stop_before_partial) {
-    if (tail_input > input + input_index) {
+  if (rr.error == error_code::SUCCESS) {
+    if (last_chunk_handling_options == stop_before_partial) {
+      //
+      // tail_input is initially set to input + input_index
+      // and it is modified by base64_tail_decode_safe.
+      // If it advanced, then we know that we have read up to
+      // tail_input and, thus, we consumed tail_input - input
+      // characters. Recall that input points at the beginning of
+      // the input buffer and input_index is the number of
+      // characters that we have have processed prior to calling
+      // base64_tail_decode_safe.
       rr.count = tail_input - input;
-    } else if (r.input_count > 0) {
-      rr.count = r.input_count + rr.count;
+
+      // We may need to consume some padding characters.
+      // If remaining_out is divisible by 3, we are done.
+      // If the remainder of remaining_out is 1, we need to consume
+      // up to one padding character.
+      // If the remainder of remaining_out is 2, we need to consume
+      // up to one padding character.
+      size_t remainder = remaining_out % 3;
+      size_t expected_padding = (remainder % 3 == 0) ? 0 : (3 - remainder);
+      // We only try to advance *if* we may have padding characters.
+      if (expected_padding > 0) {
+        while (rr.count < length) {
+          auto c = input[rr.count];
+          if (c == '=') {
+            if (expected_padding == 0) {
+              // We have already consumed all the padding characters.
+              break;
+            }
+            expected_padding--;
+            rr.count++;
+
+          } else if (scalar::base64::is_ascii_white_space(input[rr.count])) {
+            // We have a white space character.
+            // We need to consume it.
+            rr.count++;
+          } else {
+            // We have a non-white space character.
+            // We need to stop here.
+            break;
+          }
+        }
+      }
+      return rr;
     }
-    return rr;
+    rr.count = length;
+  } else {
+    rr.count += input_index;
   }
-  rr.count += input_index;
   return rr;
 }
 
   #if SIMDUTF_ATOMIC_REF
 size_t atomic_binary_to_base64(const char *input, size_t length, char *output,
                                base64_options options) noexcept {
-  static_assert(std::atomic_ref<char>::required_alignment == 1);
   size_t retval = 0;
+    #if defined(FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION)
+  // We use a smaller buffer during fuzzing to more easily detect bugs.
+  constexpr size_t input_block_size = 128 * 3;
+    #else
   // Arbitrary block sizes: 3KB for input which produces 4KB in output.
   constexpr size_t input_block_size = 1024 * 3;
+    #endif
   std::array<char, input_block_size> inbuf;
-
-  // std::atomic_ref<T> must not have a const T, see
-  // https://cplusplus.github.io/LWG/issue3508
-  // we instead provide a mutable input, which is ok since we are only reading
-  // from it.
-  char *mutable_input = const_cast<char *>(input);
-
   for (size_t i = 0; i < length; i += input_block_size) {
     const size_t current_block_size = std::min(input_block_size, length - i);
-    // This copy is inefficient.
-    // Under x64, we could use 16-byte aligned loads.
-    // Note that we warn users that the performance might be poor.
-    for (size_t j = 0; j < current_block_size; ++j) {
-      inbuf[j] = std::atomic_ref<char>(mutable_input[i + j])
-                     .load(std::memory_order_relaxed);
-    }
+    simdutf::scalar::memcpy_atomic_read(inbuf.data(), input + i,
+                                        current_block_size);
     const size_t written = binary_to_base64(inbuf.data(), current_block_size,
                                             output + retval, options);
     retval += written;
