@@ -1509,6 +1509,68 @@ simdutf_warn_unused bool validate_utf16le(const char16_t *buf,
                                           size_t len) noexcept {
   return get_default_implementation()->validate_utf16le(buf, len);
 }
+
+  #if SIMDUTF_ATOMIC_REF
+template <typename char_type>
+simdutf_warn_unused result atomic_base64_to_binary_safe_impl(
+    const char_type *input, size_t length, char *output, size_t &outlen,
+    base64_options options,
+    last_chunk_handling_options last_chunk_handling_options,
+    bool decode_up_to_bad_char) noexcept {
+  static_assert(std::atomic_ref<char_type>::required_alignment ==
+                    sizeof(char_type),
+                "std::atomic_ref requires the same alignment as char_type");
+  std::array<char, 4096> temp_buffer;
+  const char_type *input_init = input;
+  size_t actual_out = 0;
+  while (true) {
+    const bool last_chunk = (temp_buffer.size() >= outlen - actual_out);
+    size_t temp_outlen = (std::min)(temp_buffer.size(), outlen - actual_out);
+
+    result r = base64_to_binary_safe(
+        input, length, temp_buffer.data(), temp_outlen, options,
+        last_chunk_handling_options, decode_up_to_bad_char);
+    // We wrote temp_outlen bytes to temp_buffer.
+    // We need to copy them to output.
+    // Copy with relaxed atomic operations to the output
+    for (size_t i = 0; i < temp_outlen; ++i) {
+      std::atomic_ref<char>(output[actual_out + i])
+          .store(temp_buffer[i], std::memory_order_relaxed);
+    }
+    actual_out += temp_outlen;
+    length -= r.count;
+    input += r.count;
+
+    // If we are done, return the result, the only case where
+    // we are not done is when we ran out of space in output.
+    if (last_chunk || r.error != error_code::OUTPUT_BUFFER_TOO_SMALL) {
+      outlen = actual_out;
+      r.count = size_t(input - input_init);
+      return r;
+    }
+  }
+}
+
+simdutf_warn_unused result atomic_base64_to_binary_safe(
+    const char *input, size_t length, char *output, size_t &outlen,
+    base64_options options,
+    last_chunk_handling_options last_chunk_handling_options,
+    bool decode_up_to_bad_char) noexcept {
+  return atomic_base64_to_binary_safe_impl<char>(
+      input, length, output, outlen, options, last_chunk_handling_options,
+      decode_up_to_bad_char);
+}
+simdutf_warn_unused result atomic_base64_to_binary_safe(
+    const char16_t *input, size_t length, char *output, size_t &outlen,
+    base64_options options,
+    last_chunk_handling_options last_chunk_handling_options,
+    bool decode_up_to_bad_char) noexcept {
+  return atomic_base64_to_binary_safe_impl<char16_t>(
+      input, length, output, outlen, options, last_chunk_handling_options,
+      decode_up_to_bad_char);
+}
+  #endif // SIMDUTF_ATOMIC_REF
+
 #endif // SIMDUTF_FEATURE_UTF16 || SIMDUTF_FEATURE_DETECT_ENCODING
 
 #if SIMDUTF_FEATURE_UTF16
@@ -1756,6 +1818,16 @@ simdutf_warn_unused size_t convert_utf32_to_latin1(
   return get_default_implementation()->convert_utf32_to_latin1(input, length,
                                                                latin1_output);
 }
+simdutf_warn_unused result convert_utf32_to_latin1_with_errors(
+    const char32_t *input, size_t length, char *latin1_buffer) noexcept {
+  return get_default_implementation()->convert_utf32_to_latin1_with_errors(
+      input, length, latin1_buffer);
+}
+simdutf_warn_unused size_t convert_valid_utf32_to_latin1(
+    const char32_t *input, size_t length, char *latin1_buffer) noexcept {
+  return get_default_implementation()->convert_valid_utf32_to_latin1(
+      input, length, latin1_buffer);
+}
 #endif // SIMDUTF_FEATURE_UTF32 && SIMDUTF_FEATURE_LATIN1
 
 #if SIMDUTF_FEATURE_UTF16 && SIMDUTF_FEATURE_UTF32
@@ -1999,10 +2071,76 @@ simdutf_warn_unused result base64_to_binary(
 }
 
 template <typename chartype>
+simdutf_warn_unused result slow_base64_to_binary_safe_impl(
+    const chartype *input, size_t length, char *output, size_t &outlen,
+    base64_options options,
+    last_chunk_handling_options last_chunk_options) noexcept {
+  const bool ignore_garbage = (options & base64_default_accept_garbage) != 0;
+  while (length > 0 &&
+         scalar::base64::is_ascii_white_space(input[length - 1])) {
+    length--;
+  }
+  size_t equallocation =
+      length; // location of the first padding character if any
+  size_t equalsigns = 0;
+  if (length > 0 && input[length - 1] == '=') {
+    equallocation = length - 1;
+    length -= 1;
+    equalsigns++;
+    while (length > 0 &&
+           scalar::base64::is_ascii_white_space(input[length - 1])) {
+      length--;
+    }
+    if (length > 0 && input[length - 1] == '=') {
+      equallocation = length - 1;
+      equalsigns++;
+      length -= 1;
+    }
+  }
+  if (length == 0) {
+    if (!ignore_garbage && equalsigns > 0) {
+      if (last_chunk_options == last_chunk_handling_options::strict) {
+        return {BASE64_INPUT_REMAINDER, 0};
+      } else if (last_chunk_options ==
+                 last_chunk_handling_options::stop_before_partial) {
+        return {SUCCESS, 0};
+      }
+      return {INVALID_BASE64_CHARACTER, equallocation};
+    }
+    return {SUCCESS, 0};
+  }
+
+  // The parameters of base64_tail_decode_safe are:
+  // - dst: the output buffer
+  // - outlen: the size of the output buffer, modified to the number of
+  //   bytes written to the output buffer
+  // - srcr: the input buffer
+  // - length: the size of the input buffer
+  // - padded_characters: the number of padding characters
+  // - options: the options for the base64 decoder
+  // - last_chunk_options: the options for the last chunk
+  // The function will return the number of bytes written to the output buffer
+  // and the number of bytes read from the input buffer.
+  // The function will also return an error code if the input buffer is not
+  // valid base64.
+  result r = scalar::base64::base64_tail_decode_safe(
+      output, outlen, input, length, equalsigns, options, last_chunk_options);
+  if (last_chunk_options != stop_before_partial &&
+      r.error == error_code::SUCCESS && equalsigns > 0) {
+    // additional checks
+    if ((outlen % 3 == 0) || ((outlen % 3) + 1 + equalsigns != 4)) {
+      r.error = error_code::INVALID_BASE64_CHARACTER;
+    }
+  }
+  return r;
+}
+
+template <typename chartype>
 simdutf_warn_unused result base64_to_binary_safe_impl(
     const chartype *input, size_t length, char *output, size_t &outlen,
     base64_options options,
-    last_chunk_handling_options last_chunk_handling_options) noexcept {
+    last_chunk_handling_options last_chunk_handling_options,
+    bool decode_up_to_bad_char) noexcept {
   static_assert(std::is_same<chartype, char>::value ||
                     std::is_same<chartype, char16_t>::value,
                 "Only char and char16_t are supported.");
@@ -2013,6 +2151,14 @@ simdutf_warn_unused result base64_to_binary_safe_impl(
     // fast path
     full_result r = get_default_implementation()->base64_to_binary_details(
         input, length, output, options, last_chunk_handling_options);
+    if (decode_up_to_bad_char &&
+        r.error == error_code::INVALID_BASE64_CHARACTER) {
+      // We need to use the slow path because we want to make sure that
+      // we write as much data as possible to the output buffer to meet
+      // the requirements of the JavaScript standard.
+      return slow_base64_to_binary_safe_impl(
+          input, length, output, outlen, options, last_chunk_handling_options);
+    }
     if (r.error != error_code::INVALID_BASE64_CHARACTER &&
         r.error != error_code::BASE64_EXTRA_BITS) {
       outlen = r.output_count;
@@ -2042,6 +2188,13 @@ simdutf_warn_unused result base64_to_binary_safe_impl(
   full_result r = get_default_implementation()->base64_to_binary_details(
       input, safe_input, output, options, loose);
   if (r.error == error_code::INVALID_BASE64_CHARACTER) {
+    if (decode_up_to_bad_char) { // We need to use the slow path because we want
+                                 // to make sure that
+      // we write as much data as possible to the output buffer to meet
+      // the requirements of the JavaScript standard.
+      return slow_base64_to_binary_safe_impl(
+          input, length, output, outlen, options, last_chunk_handling_options);
+    }
     return r;
   }
   size_t offset =
@@ -2113,11 +2266,9 @@ size_t atomic_binary_to_base64(const char *input, size_t length, char *output,
                                base64_options options) noexcept {
   static_assert(std::atomic_ref<char>::required_alignment == 1);
   size_t retval = 0;
-  // Arbitrary block sizes: 3KB for input, 4KB for output. Total is 7KB.
+  // Arbitrary block sizes: 3KB for input which produces 4KB in output.
   constexpr size_t input_block_size = 1024 * 3;
-  constexpr size_t output_block_size = input_block_size * 4 / 3;
   std::array<char, input_block_size> inbuf;
-  std::array<char, output_block_size> outbuf;
 
   // std::atomic_ref<T> must not have a const T, see
   // https://cplusplus.github.io/LWG/issue3508
@@ -2135,13 +2286,7 @@ size_t atomic_binary_to_base64(const char *input, size_t length, char *output,
                      .load(std::memory_order_relaxed);
     }
     const size_t written = binary_to_base64(inbuf.data(), current_block_size,
-                                            outbuf.data(), options);
-    // This copy is inefficient.
-    // Under x64, we could use 16-byte aligned stores.
-    for (size_t j = 0; j < written; ++j) {
-      std::atomic_ref<char>(output[retval + j])
-          .store(outbuf[j], std::memory_order_relaxed);
-    }
+                                            output + retval, options);
     retval += written;
   }
   return retval;
@@ -2179,19 +2324,23 @@ simdutf_warn_unused size_t convert_latin1_to_utf8_safe(
 #endif // SIMDUTF_FEATURE_UTF8 && SIMDUTF_FEATURE_LATIN1
 
 #if SIMDUTF_FEATURE_BASE64
-simdutf_warn_unused result base64_to_binary_safe(
-    const char *input, size_t length, char *output, size_t &outlen,
-    base64_options options,
-    last_chunk_handling_options last_chunk_handling_options) noexcept {
+simdutf_warn_unused result
+base64_to_binary_safe(const char *input, size_t length, char *output,
+                      size_t &outlen, base64_options options,
+                      last_chunk_handling_options last_chunk_handling_options,
+                      bool decode_up_to_bad_char) noexcept {
   return base64_to_binary_safe_impl<char>(input, length, output, outlen,
-                                          options, last_chunk_handling_options);
+                                          options, last_chunk_handling_options,
+                                          decode_up_to_bad_char);
 }
-simdutf_warn_unused result base64_to_binary_safe(
-    const char16_t *input, size_t length, char *output, size_t &outlen,
-    base64_options options,
-    last_chunk_handling_options last_chunk_handling_options) noexcept {
+simdutf_warn_unused result
+base64_to_binary_safe(const char16_t *input, size_t length, char *output,
+                      size_t &outlen, base64_options options,
+                      last_chunk_handling_options last_chunk_handling_options,
+                      bool decode_up_to_bad_char) noexcept {
   return base64_to_binary_safe_impl<char16_t>(
-      input, length, output, outlen, options, last_chunk_handling_options);
+      input, length, output, outlen, options, last_chunk_handling_options,
+      decode_up_to_bad_char);
 }
 
 simdutf_warn_unused size_t
