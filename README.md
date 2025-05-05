@@ -151,7 +151,7 @@ Linux or macOS users might follow the following instructions if they have a rece
 
 1. Pull the library in a directory
    ```
-   wget https://github.com/simdutf/simdutf/releases/download/v6.4.0/singleheader.zip
+   wget https://github.com/simdutf/simdutf/releases/download/v6.4.2/singleheader.zip
    unzip singleheader.zip
    ```
    You can replace `wget` by `curl -OL https://...` if you prefer.
@@ -222,7 +222,7 @@ Single-header version
 You can create a single-header version of the library where
 all of the code is put into two files (`simdutf.h` and `simdutf.cpp`).
 We publish a zip archive containing these files, e.g., see
-https://github.com/simdutf/simdutf/releases/download/v6.4.0/singleheader.zip
+https://github.com/simdutf/simdutf/releases/download/v6.4.2/singleheader.zip
 
 You may generate it on your own using a Python script.
 
@@ -1817,6 +1817,9 @@ As you can see, the result is as expected.
 In some instances, you may want to limit the size of the output further when decoding base64.
 For this purpose, you may use the `base64_to_binary_safe` functions. The functions may also
 be useful if you seek to decode the input into segments having a maximal capacity.
+Another benefit of the `base64_to_binary_safe` functions is that they inform you
+about how much data was written to the output buffer, even when there is a fatal
+error.
 
 
 ```C++
