@@ -229,7 +229,6 @@ full_result
 compress_decode_base64(char *dst, const chartype *src, size_t srclen,
                        base64_options options,
                        last_chunk_handling_options last_chunk_options) {
-
   (void)options;
   const uint8_t *to_base64 =
       default_or_url ? tables::base64::to_base64_default_or_url_value
@@ -240,12 +239,11 @@ compress_decode_base64(char *dst, const chartype *src, size_t srclen,
   size_t padding_characters = ri.equalsigns;
   srclen = ri.srclen;
   size_t full_input_length = ri.full_input_length;
-  (void)full_input_length;
   if (srclen == 0) {
     if (!ignore_garbage && padding_characters > 0) {
       return {INVALID_BASE64_CHARACTER, equallocation, 0};
     }
-    return {SUCCESS, 0, 0};
+    return {SUCCESS, full_input_length, 0};
   }
   const chartype *const srcinit = src;
   const char *const dstinit = dst;
@@ -318,8 +316,10 @@ compress_decode_base64(char *dst, const chartype *src, size_t srclen,
     base64_decode_block(dst, buffer_start);
     dst += 48;
   }
-
   if ((bufferptr - buffer_start) != 0) {
+    // For efficiency reasons, we end up reproducing much of the code
+    // in base64_tail_decode_impl. Better engineering would be to
+    // refactor the code so that we can call it without a performance hit.
     size_t rem = (bufferptr - buffer_start);
     int idx = rem % 4;
     __mmask64 mask = ((__mmask64)1 << rem) - 1;
@@ -336,7 +336,12 @@ compress_decode_base64(char *dst, const chartype *src, size_t srclen,
         28, 29, 30, 24, 25, 26, 20, 21, 22, 16, 17, 18, 12, 13, 14, 8, 9, 10, 4,
         5, 6, 0, 1, 2);
     const __m512i shuffled = _mm512_permutexvar_epi8(pack, merged);
-
+    // We never should have that the number of base64 characters + the
+    // number of padding characters is more than 4.
+    if (!ignore_garbage && (idx + padding_characters > 4)) {
+      return {INVALID_BASE64_CHARACTER, size_t(src - srcinit),
+              size_t(dst - dstinit), true};
+    }
     // The idea here is that in loose mode,
     // if there is padding at all, it must be used
     // to form 4-wise chunk. However, in loose mode,
@@ -348,7 +353,6 @@ compress_decode_base64(char *dst, const chartype *src, size_t srclen,
       return {INVALID_BASE64_CHARACTER, size_t(src - srcinit),
               size_t(dst - dstinit), true};
     } else
-
       // The idea here is that in strict mode, we do not want to accept
       // incomplete base64 chunks. So if the chunk was otherwise valid, we
       // return BASE64_INPUT_REMAINDER.
@@ -365,7 +369,7 @@ compress_decode_base64(char *dst, const chartype *src, size_t srclen,
         // skip the minute there are padding characters.
         if ((last_chunk_options ==
                  last_chunk_handling_options::stop_before_partial &&
-             (padding_characters + idx < 4) &&
+             (padding_characters + idx < 4) && (idx != 0) &&
              (idx >= 2 || padding_characters == 0)) ||
             (last_chunk_options ==
                  last_chunk_handling_options::only_full_chunks &&
@@ -381,6 +385,16 @@ compress_decode_base64(char *dst, const chartype *src, size_t srclen,
             if (simdutf::scalar::base64::is_eight_byte(c) && code <= 63) {
               characters_to_skip--;
             }
+          }
+          // And then we need to skip ignored characters
+          // See https://github.com/simdutf/simdutf/issues/824
+          while (src > srcinit) {
+            auto c = *(src - 1);
+            uint8_t code = to_base64[uint8_t(c)];
+            if (simdutf::scalar::base64::is_eight_byte(c) && code <= 63) {
+              break;
+            }
+            src--;
           }
           return {SUCCESS, size_t(src - srcinit), size_t(dst - dstinit)};
         } else {
@@ -435,7 +449,6 @@ compress_decode_base64(char *dst, const chartype *src, size_t srclen,
             dst += output_len;
           }
         }
-
     if (!ignore_garbage && !is_partial(last_chunk_options) &&
         padding_characters > 0) {
       size_t output_count = size_t(dst - dstinit);
