@@ -4,7 +4,6 @@ set(SIMDUTF_TEST_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../)
 if(MSVC)
   add_compile_options("/Zi" "/EHsc" "/GR")
 endif()
-
 add_subdirectory(helpers)
 add_subdirectory(reference)
 
@@ -24,7 +23,7 @@ add_cpp_test(random_fuzzer)
 target_link_libraries(random_fuzzer
   PUBLIC simdutf::tests::helpers
          simdutf::tests::reference)
-if(MSVC AND BUILD_SHARED_LIBS)
+if(WIN32 AND BUILD_SHARED_LIBS)
   # Copy the simdutf dll into the tests directory
   add_custom_command(TARGET random_fuzzer POST_BUILD        # Adds a post-build event
     COMMAND ${CMAKE_COMMAND} -E copy_if_different  # which executes "cmake -E copy_if_different..."
@@ -112,12 +111,16 @@ if(Python3_FOUND)
   set(SCRIPT ${SIMDUTF_SOURCE_DIR}/scripts/sse_validate_utf16le_testcases.py)
   add_custom_command(TARGET validate_utf16le_basic_tests
                    COMMAND ${Python3_EXECUTABLE} ${SCRIPT}
-                   DEPENDS ${SCRIPT}
+                   POST_BUILD
                    VERBATIM
   )
   unset(SCRIPT)
 endif(Python3_FOUND)
+add_cpp_test(find_tests)
 
+target_link_libraries(find_tests
+  PUBLIC simdutf::tests::helpers
+         simdutf::tests::reference)
 
 add_cpp_test(convert_latin1_to_utf8_tests)
 target_link_libraries(convert_latin1_to_utf8_tests 

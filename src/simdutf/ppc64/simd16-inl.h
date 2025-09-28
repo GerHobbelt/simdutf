@@ -14,8 +14,8 @@ template <typename T> struct base16 {
 
   // Conversion from SIMD register
   simdutf_really_inline base16(const vector_type _value) : value{_value} {}
-
   void dump() const {
+#ifdef SIMDUTF_LOGGING
     uint16_t tmp[8];
     vec_xst(value, 0, reinterpret_cast<vector_type *>(tmp));
     for (int i = 0; i < 8; i++) {
@@ -28,6 +28,7 @@ template <typename T> struct base16 {
       }
     }
     putchar('\n');
+#endif // SIMDUTF_LOGGING
   }
 };
 
@@ -296,6 +297,13 @@ template <typename T> struct simd16x32 {
     const simd16<T> mask = simd16<T>::splat(m);
     return simd16x32<bool>(this->chunks[0] <= mask, this->chunks[1] <= mask,
                            this->chunks[2] <= mask, this->chunks[3] <= mask)
+        .to_bitmask();
+  }
+
+  simdutf_really_inline uint64_t eq(const T m) const {
+    const simd16<T> mask = simd16<T>::splat(m);
+    return simd16x32<bool>(this->chunks[0] == mask, this->chunks[1] == mask,
+                           this->chunks[2] == mask, this->chunks[3] == mask)
         .to_bitmask();
   }
 

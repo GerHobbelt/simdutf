@@ -151,7 +151,7 @@ Linux or macOS users might follow the following instructions if they have a rece
 
 1. Pull the library in a directory
    ```
-   wget https://github.com/simdutf/simdutf/releases/download/v7.0.0/singleheader.zip
+   wget https://github.com/simdutf/simdutf/releases/download/v7.1.0/singleheader.zip
    unzip singleheader.zip
    ```
    You can replace `wget` by `curl -OL https://...` if you prefer.
@@ -222,7 +222,7 @@ Single-header version
 You can create a single-header version of the library where
 all of the code is put into two files (`simdutf.h` and `simdutf.cpp`).
 We publish a zip archive containing these files, e.g., see
-https://github.com/simdutf/simdutf/releases/download/v7.0.0/singleheader.zip
+https://github.com/simdutf/simdutf/releases/download/v7.1.0/singleheader.zip
 
 You may generate it on your own using a Python script.
 
@@ -457,7 +457,8 @@ enum error_code {
   INVALID_BASE64_CHARACTER, // Found a character that cannot be part of a valid
                             // base64 string. This may include a misplaced padding character ('=').
   BASE64_INPUT_REMAINDER,   // The base64 input terminates with a single
-                            // character, excluding padding (=).
+                            // character, excluding padding (=). It is also used
+                            // in strict mode when padding is not adequate.
   BASE64_EXTRA_BITS,        // The base64 input terminates with non-zero
                             // padding bits.
   OUTPUT_BUFFER_TOO_SMALL,  // The provided buffer is too small.
@@ -2026,16 +2027,22 @@ The specification of our base64 functions is as follows:
 // garbage characters are characters that are not part of the base64 alphabet nor ASCII spaces.
 using base64_options = uint64_t;
 enum base64_options : uint64_t {
-  base64_default = 0,         /* standard base64 format (with padding) */
-  base64_url = 1,             /* base64url format (no padding) */
-  base64_reverse_padding = 2, /* modifier for base64_default and base64_url */
+  base64_default = 0, /* standard base64 format (with padding) */
+  base64_url = 1,     /* base64url format (no padding) */
   base64_default_no_padding =
       base64_default |
       base64_reverse_padding, /* standard base64 format without padding */
   base64_url_with_padding =
       base64_url | base64_reverse_padding, /* base64url with padding */
-  base64_default_accept_garbage = 4,       /* standard base64 format accepting garbage characters */
-  base64_url_accept_garbage = 5,           /* base64url format accepting garbage characters */
+  base64_default_accept_garbage =
+      4, /* standard base64 format accepting garbage characters, the input stops with the first '=' if any */
+  base64_url_accept_garbage =
+      5, /* base64url format accepting garbage characters, the input stops with the first '=' if any */
+  base64_default_or_url =
+      8, /* standard/base64url hybrid format (only meaningful for decoding!) */
+  base64_default_or_url_accept_garbage =
+      12, /* standard/base64url hybrid format accepting garbage characters
+             (only meaningful for decoding!), the input stops with the first '=' if any */
 };
 
 // last_chunk_handling_options are used to specify the handling of the last
@@ -2044,7 +2051,8 @@ enum base64_options : uint64_t {
 enum last_chunk_handling_options : uint64_t {
   loose = 0,               /* standard base64 format, decode partial final chunk */
   strict = 1,              /* error when the last chunk is partial, 2 or 3 chars, and unpadded, or non-zero bit padding */
-  stop_before_partial = 2, /* if the last chunk is partial (2 or 3 chars), ignore it (no error) */
+  stop_before_partial = 2, /* if the last chunk is partial , ignore it (no error) */
+  only_full_chunks = 3 /* only decode full blocks (4 base64 characters, no padding) */
 };
 
 /**
@@ -2260,7 +2268,8 @@ simdutf_warn_unused result base64_to_binary(const char16_t * input, size_t lengt
  * last_chunk_handling_options::stop_before_partial.
  * @param decode_up_to_bad_char if true, the function will decode up to the
  * first invalid character. By default (false), it is assumed that the output
- * buffer is to be discarded.
+ * buffer is to be discarded. When there are multiple errors in the input,
+ * using decode_up_to_bad_char might trigger a different error.
  * @return a result pair struct (of type simdutf::result containing the two
  * fields error and count) with an error code and position of the
  * INVALID_BASE64_CHARACTER error (in the input in units) if any, or the number
