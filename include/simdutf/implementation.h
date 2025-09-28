@@ -539,6 +539,8 @@ simdutf_really_inline simdutf_warn_unused size_t convert_latin1_to_utf8(
  *
  * This function is suitable to work with inputs from untrusted sources.
  *
+ * We write as many characters as possible.
+ *
  * @param input         the Latin1 string to convert
  * @param length        the length of the string in bytes
  * @param utf8_output  	the pointer to buffer that can hold conversion result
@@ -1195,6 +1197,44 @@ simdutf_really_inline simdutf_warn_unused size_t convert_utf16_to_utf8(
     detail::output_span_of_byte_like auto &&utf8_output) noexcept {
   return convert_utf16_to_utf8(utf16_input.data(), utf16_input.size(),
                                reinterpret_cast<char *>(utf8_output.data()));
+}
+  #endif // SIMDUTF_SPAN
+
+/**
+ * Using native endianness, convert possibly broken UTF-16 string into UTF-8
+ * string with output limit.
+ *
+ * We write as many characters as possible into the output buffer,
+ *
+ * During the conversion also validation of the input string is done.
+ * This function is suitable to work with inputs from untrusted sources.
+ *
+ * This function is not BOM-aware.
+ *
+ *
+ * @param input         the UTF-16 string to convert
+ * @param length        the length of the string in 16-bit code units (char16_t)
+ * @param utf8_output  	the pointer to buffer that can hold conversion result
+ * @param utf8_len      the maximum output length
+ * @return the number of written char; 0 if conversion is not possible
+ */
+simdutf_warn_unused size_t convert_utf16_to_utf8_safe(const char16_t *input,
+                                                      size_t length,
+                                                      char *utf8_output,
+                                                      size_t utf8_len) noexcept;
+  #if SIMDUTF_SPAN
+simdutf_really_inline simdutf_warn_unused size_t convert_utf16_to_utf8_safe(
+    std::span<const char16_t> utf16_input,
+    detail::output_span_of_byte_like auto &&utf8_output) noexcept {
+  // implementation note: outputspan is a forwarding ref to avoid copying and
+  // allow both lvalues and rvalues. std::span can be copied without problems,
+  // but std::vector should not, and this function should accept both. it will
+  // allow using an owning rvalue ref (example: passing a temporary std::string)
+  // as output, but the user will quickly find out that he has no way of getting
+  // the data out of the object in that case.
+  return convert_utf16_to_utf8_safe(
+      utf16_input.data(), utf16_input.size(),
+      reinterpret_cast<char *>(utf8_output.data()), utf8_output.size());
 }
   #endif // SIMDUTF_SPAN
 #endif   // SIMDUTF_FEATURE_UTF8 && SIMDUTF_FEATURE_UTF16
@@ -3041,6 +3081,12 @@ binary_to_base64(const detail::input_span_of_byte_like auto &input,
  *
  * This function always succeeds.
  *
+ * This function is considered experimental. It is not tested by default
+ * (see the CMake option SIMDUTF_ATOMIC_BASE64_TESTS) nor is it fuzz tested.
+ * It is not documented in the public API documentation (README). It is
+ * offered on a best effort basis. We rely on the community for further
+ * testing and feedback.
+ *
  * @brief atomic_binary_to_base64
  * @param input         the binary to process
  * @param length        the length of the input in bytes
@@ -3324,6 +3370,12 @@ base64_to_binary_safe(std::span<const char16_t> input,
  * the availability of this function by checking the macro
  * SIMDUTF_ATOMIC_REF.
  *
+ * This function is considered experimental. It is not tested by default
+ * (see the CMake option SIMDUTF_ATOMIC_BASE64_TESTS) nor is it fuzz tested.
+ * It is not documented in the public API documentation (README). It is
+ * offered on a best effort basis. We rely on the community for further
+ * testing and feedback.
+ *
  * @param input         the base64 input to decode
  * @param length        the length of the input in bytes
  * @param output        the pointer to buffer that can hold the conversion
@@ -3392,6 +3444,20 @@ atomic_base64_to_binary_safe(
     #endif // SIMDUTF_SPAN
   #endif   // SIMDUTF_ATOMIC_REF
 
+/**
+ * Find the first occurrence of a character in a string. If the character is
+ * not found, return a pointer to the end of the string.
+ * @param start        the start of the string
+ * @param end          the end of the string
+ * @param character    the character to find
+ * @return a pointer to the first occurrence of the character in the string,
+ * or a pointer to the end of the string if the character is not found.
+ *
+ */
+simdutf_warn_unused const char *find(const char *start, const char *end,
+                                     char character) noexcept;
+simdutf_warn_unused const char16_t *
+find(const char16_t *start, const char16_t *end, char16_t character) noexcept;
 #endif // SIMDUTF_FEATURE_BASE64
 
 /**
@@ -5117,7 +5183,14 @@ public:
   binary_to_base64(const char *input, size_t length, char *output,
                    base64_options options = base64_default) const noexcept = 0;
   /**
-   * Find the first occurrence of a character in a string.
+   * Find the first occurrence of a character in a string. If the character is
+   * not found, return a pointer to the end of the string.
+   * @param start        the start of the string
+   * @param end          the end of the string
+   * @param character    the character to find
+   * @return a pointer to the first occurrence of the character in the string,
+   * or a pointer to the end of the string if the character is not found.
+   *
    */
   virtual const char *find(const char *start, const char *end,
                            char character) const noexcept = 0;

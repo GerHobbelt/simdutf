@@ -231,7 +231,12 @@ add_cpp_test(convert_valid_utf16be_to_latin1_tests)
 target_link_libraries(convert_valid_utf16be_to_latin1_tests 
   PUBLIC simdutf::tests::helpers
           simdutf::tests::reference)
-                
+
+add_cpp_test(convert_utf16_to_utf8_safe_tests)
+target_link_libraries(convert_utf16_to_utf8_safe_tests
+  PUBLIC simdutf::tests::helpers
+         simdutf::tests::reference)
+
 add_cpp_test(convert_utf16le_to_utf8_tests)
 target_link_libraries(convert_utf16le_to_utf8_tests
   PUBLIC simdutf::tests::helpers
@@ -386,12 +391,12 @@ add_cpp_test(span_tests)
 target_link_libraries(span_tests
   PUBLIC simdutf::tests::helpers
          simdutf::tests::reference)
-
-add_cpp_test(atomic_base64_tests)
-target_link_libraries(atomic_base64_tests
-  PUBLIC simdutf::tests::helpers
-         simdutf::tests::reference)
-
+if(SIMDUTF_ATOMIC_BASE64_TESTS)
+  add_cpp_test(atomic_base64_tests)
+  target_link_libraries(atomic_base64_tests
+    PUBLIC simdutf::tests::helpers
+          simdutf::tests::reference)
+endif(SIMDUTF_ATOMIC_BASE64_TESTS)
 add_cpp_test(internal_tests)
 target_link_libraries(internal_tests
   PUBLIC simdutf::tests::helpers)

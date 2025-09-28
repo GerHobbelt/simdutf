@@ -21,6 +21,8 @@ simdutf: Unicode validation and transcoding at billions of characters per second
   - [Example](#example)
   - [API](#api)
   - [Base64](#base64)
+  - [Find](#find)
+  - [C++20 and std::span usage in simdutf](#c20-and-stdspan-usage-in-simdutf)
   - [The sutf command-line tool](#the-sutf-command-line-tool)
   - [Manual implementation selection](#manual-implementation-selection)
   - [Thread safety](#thread-safety)
@@ -151,7 +153,7 @@ Linux or macOS users might follow the following instructions if they have a rece
 
 1. Pull the library in a directory
    ```
-   wget https://github.com/simdutf/simdutf/releases/download/v7.1.0/singleheader.zip
+   wget https://github.com/simdutf/simdutf/releases/download/v7.3.0/singleheader.zip
    unzip singleheader.zip
    ```
    You can replace `wget` by `curl -OL https://...` if you prefer.
@@ -222,7 +224,7 @@ Single-header version
 You can create a single-header version of the library where
 all of the code is put into two files (`simdutf.h` and `simdutf.cpp`).
 We publish a zip archive containing these files, e.g., see
-https://github.com/simdutf/simdutf/releases/download/v7.1.0/singleheader.zip
+https://github.com/simdutf/simdutf/releases/download/v7.3.0/singleheader.zip
 
 You may generate it on your own using a Python script.
 
@@ -254,7 +256,7 @@ The script `singleheader/amalgamate.py` accepts the following parameters:
 * `--with-utf32` - likewise: only UTF-32 encoding;
 * `--with-ascii` - procedures related to ASCII encoding;
 * `--with-latin1` - convert between selected UTF encodings and Latin1;
-* `--with-base64` - procedures related to Base64 encoding;
+* `--with-base64` - procedures related to Base64 encoding, includes 'find';
 * `--with-detect-enc` - enable detect encoding.
 
 If we need conversion between different encodings, like UTF-8 and UTF-32, then
@@ -1159,6 +1161,47 @@ simdutf_warn_unused size_t convert_utf8_to_utf16be(const char * input, size_t le
  */
 simdutf_warn_unused size_t convert_utf8_to_utf32(const char * input, size_t length, char32_t* utf32_output) noexcept;
 
+/**
+ * Using native endianness, convert possibly broken UTF-16 string into UTF-8
+ * string.
+ *
+ * During the conversion also validation of the input string is done.
+ * This function is suitable to work with inputs from untrusted sources.
+ *
+ * This function is not BOM-aware.
+ *
+ * @param input         the UTF-16 string to convert
+ * @param length        the length of the string in 2-byte code units (char16_t)
+ * @param utf8_buffer   the pointer to buffer that can hold conversion result
+ * @return number of written code units; 0 if input is not a valid UTF-16LE
+ * string
+ */
+simdutf_warn_unused size_t convert_utf16_to_utf8(const char16_t *input,
+                                                 size_t length,
+                                                 char *utf8_buffer) noexcept;
+
+
+/**
+ * Using native endianness, convert possibly broken UTF-16 string into UTF-8
+ * string with output limit.
+ *
+ * We write as many characters as possible into the output buffer,
+ *
+ * During the conversion also validation of the input string is done.
+ * This function is suitable to work with inputs from untrusted sources.
+ *
+ * This function is not BOM-aware.
+ *
+ *
+ * @param input         the UTF-16 string to convert
+ * @param length        the length of the string in 16-bit code units (char16_t)
+ * @param utf8_output  	the pointer to buffer that can hold conversion result
+ * @param utf8_len      the maximum output length
+ * @return the number of written char; 0 if conversion is not possible
+ */
+simdutf_warn_unused size_t
+convert_utf16_to_utf8_safe(const char16_t *input, size_t length, char *utf8_output,
+                            size_t utf8_len) noexcept;
 
 /**
  * Using native endianness, convert possibly broken UTF-16 string into Latin1 string.
@@ -2282,6 +2325,69 @@ simdutf_warn_unused result base64_to_binary_safe(const char16_t * input, size_t 
       last_chunk_handling_options last_chunk_options = loose,
       bool decode_up_to_bad_char = false) noexcept;
 ```
+
+Find
+-----
+
+The C++ standard library provides `std::find` for locating a character in a string, but its performance can be suboptimal on modern hardware. To address this, we introduce `simdutf::find`, a high-performance alternative optimized for recent processors using SIMD instructions. It operates on raw pointers (`char` or `char16_t`) for maximum efficiency.
+
+
+
+```cpp
+  std::string input = "abc";
+
+  const char* result =
+      simdutf::find(input.data(), input.data() + input.size(), 'c');
+  // result should point at the letter 'c'
+```
+
+The `simdutf::find` interface is straightforward and efficient.
+
+
+```cpp
+/**
+  * Find the first occurrence of a character in a string. If the character is
+  * not found, return a pointer to the end of the string.
+  * @param start        the start of the string
+  * @param end          the end of the string
+  * @param character    the character to find
+  * @return a pointer to the first occurrence of the character in the string,
+  * or a pointer to the end of the string if the character is not found.
+  *
+  */
+simdutf_warn_unused const char *find(const char *start, const char *end,
+                          char character) noexcept;
+simdutf_warn_unused const char16_t *find(const char16_t *start, const char16_t *end,
+                              char16_t character) noexcept;
+```
+
+# C++20 and std::span usage in simdutf
+
+If you are compiling with C++20 or later, span support is enabled. This allows you to use simdutf in a safer and more expressive way, without manually handling pointers and sizes.
+
+The span interface is easy to use. If you have a container like `std::vector` or `std::array`, you can pass the container directly. If you have a pointer and a size, construct a `std::span` and pass it.
+When dealing with ranges of bytes (like `char`), anything that has a `std::span-like` interface (has appopriate `data()` and `size()` member functions) is accepted. Ranges of larger types are accepted as `std::span` arguments.
+
+## Example
+
+Suppose you want to convert a UTF-16 string to UTF-8:
+
+```cpp
+#include <simdutf.h>
+#include <vector>
+#include <span>
+#include <string>
+
+std::u16string utf16_input = u"Bonjour le monde";
+std::vector<char> utf8_output(64); // ensure sufficient size
+
+// Use std::span for input and output
+size_t written = simdutf::convert_utf16_to_utf8_safe(utf16_input, utf8_output);
+```
+
+
+## Note
+- You are still responsible for providing a sufficiently large output buffer, just as with the pointer/size API.
 
 
 The sutf command-line tool
