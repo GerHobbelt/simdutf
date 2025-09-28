@@ -7,6 +7,19 @@ namespace {
 namespace utf16 {
 
 template <endianness big_endian>
+inline simdutf_warn_unused bool validate_as_ascii(const char16_t *data,
+                                                  size_t len) noexcept {
+  for (size_t pos = 0; pos < len; pos++) {
+    char16_t word =
+        !match_system(big_endian) ? u16_swap_bytes(data[pos]) : data[pos];
+    if (word >= 0x80) {
+      return false;
+    }
+  }
+  return true;
+}
+
+template <endianness big_endian>
 inline simdutf_warn_unused bool validate(const char16_t *data,
                                          size_t len) noexcept {
   uint64_t pos = 0;
@@ -114,8 +127,8 @@ change_endianness_utf16(const char16_t *input, size_t size, char16_t *output) {
 template <endianness big_endian>
 simdutf_warn_unused inline size_t trim_partial_utf16(const char16_t *input,
                                                      size_t length) {
-  if (length <= 1) {
-    return length;
+  if (length == 0) {
+    return 0;
   }
   uint16_t last_word = uint16_t(input[length - 1]);
   last_word = !match_system(big_endian) ? u16_swap_bytes(last_word) : last_word;
