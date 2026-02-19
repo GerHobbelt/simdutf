@@ -76,7 +76,7 @@ validate_with_errors(const char16_t *data, size_t len) noexcept {
 }
 
 template <endianness big_endian>
-inline size_t count_code_points(const char16_t *p, size_t len) {
+simdutf_constexpr23 size_t count_code_points(const char16_t *p, size_t len) {
   // We are not BOM aware.
   size_t counter{0};
   for (size_t i = 0; i < len; i++) {
@@ -104,7 +104,8 @@ simdutf_constexpr23 size_t utf8_length_from_utf16(const char16_t *p,
 }
 
 template <endianness big_endian>
-inline size_t utf32_length_from_utf16(const char16_t *p, size_t len) {
+simdutf_constexpr23 size_t utf32_length_from_utf16(const char16_t *p,
+                                                   size_t len) {
   // We are not BOM aware.
   size_t counter{0};
   for (size_t i = 0; i < len; i++) {
@@ -122,8 +123,8 @@ change_endianness_utf16(const char16_t *input, size_t size, char16_t *output) {
 }
 
 template <endianness big_endian>
-simdutf_warn_unused inline size_t trim_partial_utf16(const char16_t *input,
-                                                     size_t length) {
+simdutf_warn_unused simdutf_constexpr23 size_t
+trim_partial_utf16(const char16_t *input, size_t length) {
   if (length == 0) {
     return 0;
   }

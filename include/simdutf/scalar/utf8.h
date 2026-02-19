@@ -16,20 +16,26 @@ simdutf_constexpr23 simdutf_warn_unused bool validate(BytePtr data,
   uint64_t pos = 0;
   uint32_t code_point = 0;
   while (pos < len) {
-    // check of the next 16 bytes are ascii.
-    uint64_t next_pos = pos + 16;
-    if (next_pos <=
-        len) { // if it is safe to read 16 more bytes, check that they are ascii
-      uint64_t v1{};
-      std::memcpy(&v1, data + pos, sizeof(uint64_t));
-      uint64_t v2{};
-      std::memcpy(&v2, data + pos + sizeof(uint64_t), sizeof(uint64_t));
-      uint64_t v{v1 | v2};
-      if ((v & 0x8080808080808080) == 0) {
-        pos = next_pos;
-        continue;
+    uint64_t next_pos;
+#if SIMDUTF_CPLUSPLUS23
+    if !consteval
+#endif
+    { // check if the next 16 bytes are ascii.
+      next_pos = pos + 16;
+      if (next_pos <= len) { // if it is safe to read 16 more bytes, check
+                             // that they are ascii
+        uint64_t v1{};
+        std::memcpy(&v1, data + pos, sizeof(uint64_t));
+        uint64_t v2{};
+        std::memcpy(&v2, data + pos + sizeof(uint64_t), sizeof(uint64_t));
+        uint64_t v{v1 | v2};
+        if ((v & 0x8080808080808080) == 0) {
+          pos = next_pos;
+          continue;
+        }
       }
     }
+
     unsigned char byte = data[pos];
 
     while (byte < 0b10000000) {
@@ -242,35 +248,45 @@ inline simdutf_warn_unused result rewind_and_validate_with_errors(
   return res;
 }
 
-inline size_t count_code_points(const char *buf, size_t len) {
-  const int8_t *p = reinterpret_cast<const int8_t *>(buf);
+template <typename InputPtr>
+#if SIMDUTF_CPLUSPLUS20
+  requires simdutf::detail::indexes_into_byte_like<InputPtr>
+#endif
+simdutf_constexpr23 size_t count_code_points(InputPtr data, size_t len) {
   size_t counter{0};
   for (size_t i = 0; i < len; i++) {
     // -65 is 0b10111111, anything larger in two-complement's should start a new
     // code point.
-    if (p[i] > -65) {
+    if (int8_t(data[i]) > -65) {
       counter++;
     }
   }
   return counter;
 }
 
-inline size_t utf16_length_from_utf8(const char *buf, size_t len) {
-  const int8_t *p = reinterpret_cast<const int8_t *>(buf);
+template <typename InputPtr>
+#if SIMDUTF_CPLUSPLUS20
+  requires simdutf::detail::indexes_into_byte_like<InputPtr>
+#endif
+simdutf_constexpr23 size_t utf16_length_from_utf8(InputPtr data, size_t len) {
   size_t counter{0};
   for (size_t i = 0; i < len; i++) {
-    if (p[i] > -65) {
+    if (int8_t(data[i]) > -65) {
       counter++;
     }
-    if (uint8_t(p[i]) >= 240) {
+    if (uint8_t(data[i]) >= 240) {
       counter++;
     }
   }
   return counter;
 }
 
-simdutf_warn_unused inline size_t trim_partial_utf8(const char *input,
-                                                    size_t length) {
+template <typename InputPtr>
+#if SIMDUTF_CPLUSPLUS20
+  requires simdutf::detail::indexes_into_byte_like<InputPtr>
+#endif
+simdutf_warn_unused simdutf_constexpr23 size_t
+trim_partial_utf8(InputPtr input, size_t length) {
   if (length < 3) {
     switch (length) {
     case 2:
