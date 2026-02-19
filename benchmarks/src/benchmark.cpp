@@ -116,6 +116,14 @@ Benchmark::Benchmark(std::vector<input::Testcase> &&testcases)
   register_function("to_well_formed_utf16le",
                     &Benchmark::run_to_well_formed_utf16le,
                     simdutf::encoding_type::UTF16_LE);
+  register_function("naive_validate_ascii",
+                    &Benchmark::run_naive_validate_ascii,
+                    simdutf::encoding_type::UTF8);
+  register_function("validate_ascii", &Benchmark::run_validate_ascii,
+                    simdutf::encoding_type::UTF8);
+  register_function("validate_ascii_with_errors",
+                    &Benchmark::run_validate_ascii_with_errors,
+                    simdutf::encoding_type::UTF8);
   register_function("validate_utf8", &Benchmark::run_validate_utf8,
                     simdutf::encoding_type::UTF8);
   register_function("validate_utf8_with_errors",
@@ -143,8 +151,14 @@ Benchmark::Benchmark(std::vector<input::Testcase> &&testcases)
   register_function("utf8_length_from_utf16le",
                     &Benchmark::run_utf8_length_from_utf16le,
                     simdutf::encoding_type::UTF16_LE);
+  register_function("utf8_length_from_utf16le_with_replacement",
+                    &Benchmark::run_utf8_length_from_utf16le_with_replacement,
+                    simdutf::encoding_type::UTF16_LE);
   register_function("utf8_length_from_utf16be",
                     &Benchmark::run_utf8_length_from_utf16be,
+                    simdutf::encoding_type::UTF16_BE);
+  register_function("utf8_length_from_utf16be_with_replacement",
+                    &Benchmark::run_utf8_length_from_utf16be_with_replacement,
                     simdutf::encoding_type::UTF16_BE);
   register_function("utf8_length_from_utf32",
                     &Benchmark::run_utf8_length_from_utf32,
@@ -209,7 +223,7 @@ Benchmark::Benchmark(std::vector<input::Testcase> &&testcases)
   register_function("convert_valid_utf16le_to_latin1",
                     &Benchmark::run_convert_valid_utf16le_to_latin1,
                     simdutf::encoding_type::UTF16_LE);
-#if SIMDUTF_BIG_ENDIAN
+#if SIMDUTF_IS_BIG_ENDIAN
   register_function("convert_utf16_to_utf8_safe",
                     &Benchmark::run_convert_utf16_to_utf8_safe,
                     simdutf::encoding_type::UTF16_BE);
@@ -217,7 +231,7 @@ Benchmark::Benchmark(std::vector<input::Testcase> &&testcases)
   register_function("convert_utf16_to_utf8_safe",
                     &Benchmark::run_convert_utf16_to_utf8_safe,
                     simdutf::encoding_type::UTF16_LE);
-#endif // SIMDUTF_BIG_ENDIAN
+#endif // SIMDUTF_IS_BIG_ENDIAN
   register_function("convert_utf16le_to_utf8",
                     &Benchmark::run_convert_utf16le_to_utf8,
                     simdutf::encoding_type::UTF16_LE);
@@ -629,6 +643,73 @@ void Benchmark::run_validate_utf8_with_errors(
   print_summary(result, size, char_count);
 }
 
+namespace details {
+bool ascii_is_valid(const char *data, size_t size) {
+  unsigned char result = 0;
+  for (size_t i = 0; i < size; i++) {
+    result |= static_cast<unsigned char>(data[i]);
+  }
+  return (result <= 0x7F);
+}
+} // namespace details
+
+void Benchmark::run_naive_validate_ascii(
+    const simdutf::implementation &implementation, size_t iterations) {
+  const char *data = reinterpret_cast<const char *>(input_data.data());
+  const size_t size = input_data.size();
+  volatile bool sink{false};
+  auto proc = [&implementation, data, size, &sink]() {
+    sink = details::ascii_is_valid(data, size);
+  };
+
+  count_events(proc, iterations); // warming up!
+  const auto result = count_events(proc, iterations);
+  if ((sink == false) && (iterations > 0)) {
+    std::cerr << "The input was declared invalid.\n";
+  }
+  size_t char_count = get_active_implementation()->count_utf8(data, size);
+  print_summary(result, size, char_count);
+}
+
+void Benchmark::run_validate_ascii(
+    const simdutf::implementation &implementation, size_t iterations) {
+  const char *data = reinterpret_cast<const char *>(input_data.data());
+  const size_t size = input_data.size();
+  volatile bool sink{false};
+
+  auto proc = [&implementation, data, size, &sink]() {
+    sink = implementation.validate_ascii(data, size);
+  };
+
+  count_events(proc, iterations); // warming up!
+  const auto result = count_events(proc, iterations);
+  if ((sink == false) && (iterations > 0)) {
+    std::cerr << "The input was declared invalid.\n";
+  }
+  size_t char_count = get_active_implementation()->count_utf8(data, size);
+  print_summary(result, size, char_count);
+}
+
+void Benchmark::run_validate_ascii_with_errors(
+    const simdutf::implementation &implementation, size_t iterations) {
+  const char *data = reinterpret_cast<const char *>(input_data.data());
+  const size_t size = input_data.size();
+  volatile bool sink{false};
+
+  auto proc = [&implementation, data, size, &sink]() {
+    result res = implementation.validate_ascii_with_errors(data, size);
+    sink = !(res.error);
+  };
+
+  count_events(proc, iterations); // warming up!
+  const auto result = count_events(proc, iterations);
+  if ((sink == false) && (iterations > 0)) {
+    std::cerr << "The input was declared invalid.\n";
+  }
+  size_t char_count = get_active_implementation()->count_utf8(data, size);
+  print_summary(result, size, char_count);
+}
+
 void Benchmark::run_validate_utf16le(
     const simdutf::implementation &implementation, size_t iterations) {
   const simdutf::encoding_type bom =
@@ -845,6 +926,38 @@ void Benchmark::run_utf8_length_from_utf16be(
 
   auto proc = [&implementation, data, size, &sink]() {
     sink = implementation.utf8_length_from_utf16be(data, size);
+  };
+  count_events(proc, iterations); // warming up!
+  const auto result = count_events(proc, iterations);
+  print_summary(result, size, size);
+}
+
+void Benchmark::run_utf8_length_from_utf16le_with_replacement(
+    const simdutf::implementation &implementation, size_t iterations) {
+  const char16_t *data = reinterpret_cast<const char16_t *>(input_data.data());
+  const size_t size = input_data.size() / 2;
+  volatile size_t sink{0};
+
+  auto proc = [&implementation, data, size, &sink]() {
+    auto r =
+        implementation.utf8_length_from_utf16le_with_replacement(data, size);
+    sink = r.count;
+  };
+  count_events(proc, iterations); // warming up!
+  const auto result = count_events(proc, iterations);
+  print_summary(result, size, size);
+}
+
+void Benchmark::run_utf8_length_from_utf16be_with_replacement(
+    const simdutf::implementation &implementation, size_t iterations) {
+  const char16_t *data = reinterpret_cast<const char16_t *>(input_data.data());
+  const size_t size = input_data.size() / 2;
+  volatile size_t sink{0};
+
+  auto proc = [&implementation, data, size, &sink]() {
+    auto r =
+        implementation.utf8_length_from_utf16be_with_replacement(data, size);
+    sink = r.count;
   };
   count_events(proc, iterations); // warming up!
   const auto result = count_events(proc, iterations);

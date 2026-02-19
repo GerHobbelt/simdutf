@@ -90,6 +90,13 @@ private:
                     simdutf::encoding_type enc2, simdutf::encoding_type enc3);
 
 private:
+  void run_naive_validate_ascii(const simdutf::implementation &implementation,
+                                size_t iterations);
+  void run_validate_ascii(const simdutf::implementation &implementation,
+                          size_t iterations);
+  void
+  run_validate_ascii_with_errors(const simdutf::implementation &implementation,
+                                 size_t iterations);
   void run_validate_utf8(const simdutf::implementation &implementation,
                          size_t iterations);
   void
@@ -119,6 +126,10 @@ private:
   void
   run_utf8_length_from_utf16be(const simdutf::implementation &implementation,
                                size_t iterations);
+  void run_utf8_length_from_utf16le_with_replacement(
+      const simdutf::implementation &implementation, size_t iterations);
+  void run_utf8_length_from_utf16be_with_replacement(
+      const simdutf::implementation &implementation, size_t iterations);
   void run_utf8_length_from_utf32(const simdutf::implementation &implementation,
                                   size_t iterations);
   void run_utf16_length_from_utf8(const simdutf::implementation &implementation,

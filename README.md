@@ -1,14 +1,12 @@
 
-simdutf: Unicode validation and transcoding at billions of characters per second
+simdutf: Text processing at billions of characters per second [![Alpine Linux](https://github.com/simdutf/simdutf/actions/workflows/alpine.yml/badge.svg)](https://github.com/simdutf/simdutf/actions/workflows/alpine.yml) [![MSYS2-CLANG-CI](https://github.com/simdutf/simdutf/actions/workflows/msys2-clang.yml/badge.svg)](https://github.com/simdutf/simdutf/actions/workflows/msys2-clang.yml) [![Ubuntu 22.04 Sanitized CI (GCC 12, CXX 20)](https://github.com/simdutf/simdutf/actions/workflows/ubuntu22-cxx20.yml/badge.svg)](https://github.com/simdutf/simdutf/actions/workflows/ubuntu22-cxx20.yml)
 ===============================================
 
-[![Alpine Linux](https://github.com/simdutf/simdutf/actions/workflows/alpine.yml/badge.svg)](https://github.com/simdutf/simdutf/actions/workflows/alpine.yml)
-[![MSYS2-CLANG-CI](https://github.com/simdutf/simdutf/actions/workflows/msys2-clang.yml/badge.svg)](https://github.com/simdutf/simdutf/actions/workflows/msys2-clang.yml)
-[![Ubuntu 22.04 Sanitized CI (GCC 12, CXX 20)](https://github.com/simdutf/simdutf/actions/workflows/ubuntu22-cxx20.yml/badge.svg)](https://github.com/simdutf/simdutf/actions/workflows/ubuntu22-cxx20.yml)
-# Table of contents
 
-- [Table of contents](#table-of-contents)
-- [simdutf: Unicode validation and transcoding at billions of characters per second](#simdutf-unicode-validation-and-transcoding-at-billions-of-characters-per-second)
+
+
+<img src="doc/logo.svg" width="25%" style="float: right">
+
   - [Real-World Usage](#real-world-usage)
   - [How fast is it?](#how-fast-is-it)
   - [Requirements](#requirements)
@@ -82,11 +80,11 @@ The simdutf library is used by:
 - [Oracle GraalVM JavaScript](https://github.com/oracle/graaljs), a JavaScript implementation by Oracle,
 - [Couchbase](https://www.couchbase.com), a popular database system,
 - [Ladybird](https://ladybird.org), an independent Web browser,
-- [StarRocks](https://www.starrocks.io), a High-Performance Analytical Database,
 - [Cloudflare workerd](https://github.com/cloudflare/workerd), a JavaScript/Wasm Runtime,
 - [haskell/text](https://github.com/haskell/text), a library for fast operations over Unicode text,
 - [klogg](https://github.com/variar/klogg), a Really fast log explorer,
-- [Pixie](https://github.com/pixie-io/pixie), observability tool for Kubernetes applications.
+- [Pixie](https://github.com/pixie-io/pixie), observability tool for Kubernetes applications,
+- [vte](https://gitlab.gnome.org/GNOME/vte) (0.81.0 or better), a virtual terminal widget for GTK applications.
 
 
 
@@ -152,7 +150,7 @@ Linux or macOS users might follow the following instructions if they have a rece
 
 1. Pull the library in a directory
    ```
-   wget https://github.com/simdutf/simdutf/releases/download/v7.4.0/singleheader.zip
+   wget https://github.com/simdutf/simdutf/releases/download/v7.7.1/singleheader.zip
    unzip singleheader.zip
    ```
    You can replace `wget` by `curl -OL https://...` if you prefer.
@@ -170,6 +168,10 @@ Linux or macOS users might follow the following instructions if they have a rece
    1234
    perfect round trip
    ```
+
+
+*We strongly discourage working from our main git branch. You should never use our main branch
+in production. [Use our releases](https://github.com/simdutf/simdutf/releases/). They are tagged as `vX.Y.Z`.*
 
 Usage (CMake)
 -------
@@ -223,7 +225,7 @@ Single-header version
 You can create a single-header version of the library where
 all of the code is put into two files (`simdutf.h` and `simdutf.cpp`).
 We publish a zip archive containing these files, e.g., see
-https://github.com/simdutf/simdutf/releases/download/v7.4.0/singleheader.zip
+https://github.com/simdutf/simdutf/releases/download/v7.7.1/singleheader.zip
 
 You may generate it on your own using a Python script.
 
@@ -261,7 +263,7 @@ The script `singleheader/amalgamate.py` accepts the following parameters:
 If we need conversion between different encodings, like UTF-8 and UTF-32, then
 these two features have to be enabled.
 
-The amalgamated sources set to 1 the following preprocesor defines:
+The amalgamated sources set to 1 the following preprocessor defines:
 
 * `SIMDUTF_FEATURE_UTF8`,
 * `SIMDUTF_FEATURE_UTF16`,
@@ -415,8 +417,6 @@ simdutf_warn_unused simdutf::encoding_type autodetect_encoding(const char *input
  * E.g., if the input might be UTF-16LE or UTF-8, this function returns
  * the value (simdutf::encoding_type::UTF8 | simdutf::encoding_type::UTF16_LE).
  *
- * Overridden by each implementation.
- *
  * @param input the string to analyze.
  * @param length the length of the string in bytes.
  * @return the detected encoding type
@@ -452,9 +452,19 @@ enum error_code {
              // U+10FFFF,less than or equal than U+7F for ASCII OR less than
              // equal than U+FF for Latin1
   SURROGATE, // The decoded character must be not be in U+D800...DFFF (UTF-8 or
-             // UTF-32) OR a high surrogate must be followed by a low surrogate
+             // UTF-32)
+             // OR
+             // a high surrogate must be followed by a low surrogate
              // and a low surrogate must be preceded by a high surrogate
-             // (UTF-16) OR there must be no surrogate at all (Latin1)
+             // (UTF-16)
+             // OR
+             // there must be no surrogate at all and one is
+             // found (Latin1 functions)
+             // OR
+             // *specifically* for the function
+             // utf8_length_from_utf16_with_replacement, a surrogate (whether
+             // in error or not) has been found (I.e., whether we are in the
+             // Basic Multilingual Plane or not).
   INVALID_BASE64_CHARACTER, // Found a character that cannot be part of a valid
                             // base64 string. This may include a misplaced padding character ('=').
   BASE64_INPUT_REMAINDER,   // The base64 input terminates with a single
@@ -480,7 +490,7 @@ You may use functions that report an error to indicate where the problem happens
 
 ```cpp
   std::string bad_ascii = "\x20\x20\x20\x20\x20\xff\x20\x20\x20";
-  simdutf::result res = implementation.validate_ascii_with_errors(bad_ascii.data(), bad_ascii.size());
+  simdutf::result res = simdtuf::validate_ascii_with_errors(bad_ascii.data(), bad_ascii.size());
   if(res.error != simdutf::error_code::SUCCESS) {
     std::cerr << "error at index " << res.count << std::endl;
   }
@@ -490,11 +500,11 @@ Or as follows:
 
 ```cpp
   std::string bad_utf8 = "\xc3\xa9\xc3\xa9\x20\xff\xc3\xa9";
-  simdutf::result res = implementation.validate_utf8_with_errors(bad_utf8.data(), bad_utf8.size());
+  simdutf::result res = simdtuf::validate_utf8_with_errors(bad_utf8.data(), bad_utf8.size());
   if(res.error != simdutf::error_code::SUCCESS) {
     std::cerr << "error at index " << res.count << std::endl;
   }
-  res = implementation.validate_utf8_with_errors(bad_utf8.data(), res.count);
+  res = simdtuf::validate_utf8_with_errors(bad_utf8.data(), res.count);
   // will be successful in this case
   if(res.error == simdutf::error_code::SUCCESS) {
     std::cerr << "we have " << res.count << "valid bytes" << std::endl;
@@ -508,8 +518,6 @@ We have fast validation functions.
 /**
  * Validate the ASCII string.
  *
- * Overridden by each implementation.
- *
  * @param buf the ASCII string to validate.
  * @param len the length of the string in bytes.
  * @return true if and only if the string is valid ASCII.
@@ -518,8 +526,6 @@ simdutf_warn_unused bool validate_ascii(const char *buf, size_t len) noexcept;
 
 /**
  * Validate the ASCII string and stop on error.
- *
- * Overridden by each implementation.
  *
  * @param buf the ASCII string to validate.
  * @param len the length of the string in bytes.
@@ -531,8 +537,6 @@ simdutf_warn_unused result validate_ascii_with_errors(const char *buf, size_t le
  * Validate the ASCII string as a UTF-16 sequence.
  * An UTF-16 sequence is considered an ASCII sequence
  * if it could be converted to an ASCII string losslessly.
- *
- * Overridden by each implementation.
  *
  * @param buf the UTF-16 string to validate.
  * @param len the length of the string in bytes.
@@ -546,8 +550,6 @@ simdutf_warn_unused bool validate_utf16_as_ascii(const char16_t *buf,
  * An UTF-16 sequence is considered an ASCII sequence
  * if it could be converted to an ASCII string losslessly.
  *
- * Overridden by each implementation.
- *
  * @param buf the UTF-16BE string to validate.
  * @param len the length of the string in bytes.
  * @return true if and only if the string is valid ASCII.
@@ -558,8 +560,6 @@ simdutf_warn_unused bool validate_utf16be_as_ascii(const char16_t *buf,
  * Validate the ASCII string as a UTF-16LE sequence.
  * An UTF-16 sequence is considered an ASCII sequence
  * if it could be converted to an ASCII string losslessly.
- *
- * Overridden by each implementation.
  *
  * @param buf the UTF-16LE string to validate.
  * @param len the length of the string in bytes.
@@ -573,8 +573,6 @@ simdutf_warn_unused bool validate_utf16le_as_ascii(const char16_t *buf,
  * the input to be almost always valid. Otherwise, consider using
  * validate_utf8_with_errors.
  *
- * Overridden by each implementation.
- *
  * @param buf the UTF-8 string to validate.
  * @param len the length of the string in bytes.
  * @return true if and only if the string is valid UTF-8.
@@ -584,8 +582,6 @@ simdutf_warn_unused bool validate_utf8(const char *buf, size_t len) noexcept;
 /**
  * Validate the UTF-8 string and stop on error. It might be faster than
  * validate_utf8 when an error is expected to occur early.
- *
- * Overridden by each implementation.
  *
  * @param buf the UTF-8 string to validate.
  * @param len the length of the string in bytes.
@@ -597,8 +593,6 @@ simdutf_warn_unused result validate_utf8_with_errors(const char *buf, size_t len
  * Using native endianness; Validate the UTF-16 string.
  * This function may be best when you expect the input to be almost always valid.
  * Otherwise, consider using validate_utf16_with_errors.
- *
- * Overridden by each implementation.
  *
  * This function is not BOM-aware.
  *
@@ -613,8 +607,6 @@ simdutf_warn_unused bool validate_utf16(const char16_t *buf, size_t len) noexcep
  * the input to be almost always valid. Otherwise, consider using
  * validate_utf16le_with_errors.
  *
- * Overridden by each implementation.
- *
  * This function is not BOM-aware.
  *
  * @param buf the UTF-16LE string to validate.
@@ -628,8 +620,6 @@ simdutf_warn_unused bool validate_utf16le(const char16_t *buf, size_t len) noexc
  * the input to be almost always valid. Otherwise, consider using
  * validate_utf16be_with_errors.
  *
- * Overridden by each implementation.
- *
  * This function is not BOM-aware.
  *
  * @param buf the UTF-16BE string to validate.
@@ -641,8 +631,6 @@ simdutf_warn_unused bool validate_utf16be(const char16_t *buf, size_t len) noexc
 /**
  * Using native endianness; Validate the UTF-16 string and stop on error.
  * It might be faster than validate_utf16 when an error is expected to occur early.
- *
- * Overridden by each implementation.
  *
  * This function is not BOM-aware.
  *
@@ -656,8 +644,6 @@ simdutf_warn_unused result validate_utf16_with_errors(const char16_t *buf, size_
  * Validate the UTF-16LE string and stop on error. It might be faster than
  * validate_utf16le when an error is expected to occur early.
  *
- * Overridden by each implementation.
- *
  * This function is not BOM-aware.
  *
  * @param buf the UTF-16LE string to validate.
@@ -670,8 +656,6 @@ simdutf_warn_unused result validate_utf16le_with_errors(const char16_t *buf, siz
  * Validate the UTF-16BE string and stop on error. It might be faster than
  * validate_utf16be when an error is expected to occur early.
  *
- * Overridden by each implementation.
- *
  * This function is not BOM-aware.
  *
  * @param buf the UTF-16BE string to validate.
@@ -683,8 +667,6 @@ simdutf_warn_unused result validate_utf16be_with_errors(const char16_t *buf, siz
 /**
  * Validate the UTF-32 string.
  *
- * Overridden by each implementation.
- *
  * This function is not BOM-aware.
  *
  * @param buf the UTF-32 string to validate.
@@ -695,8 +677,6 @@ simdutf_warn_unused bool validate_utf32(const char32_t *buf, size_t len) noexcep
 
 /**
  * Validate the UTF-32 string and stop on error.
- *
- * Overridden by each implementation.
  *
  * This function is not BOM-aware.
  *
@@ -939,6 +919,24 @@ simdutf_warn_unused size_t utf32_length_from_utf8(const char * input, size_t len
 simdutf_warn_unused size_t utf8_length_from_utf16(const char16_t * input, size_t length) noexcept;
 
 /**
+ * Using native endianness; compute the number of bytes that this UTF-16
+ * string would require in UTF-8 format even when the UTF-16 content contains mismatched
+ * surrogates that have to be replaced by the replacement character (0xFFFD).
+ *
+ * @param input         the UTF-16 string to convert
+ * @param length        the length of the string in 2-byte code units (char16_t)
+ * @return the number of bytes required to encode the UTF-16 string as UTF-8
+ * @return a result pair struct (of type simdutf::result containing the two fields error and count)
+ * where the count is the number of bytes required to encode the UTF-16 string as UTF-8, and the
+ * error code is either SUCCESS or SURROGATE. The count is correct regardless of the error field.
+ * When SURROGATE is returned, it does not indicate an error in the case of this function:
+ * it indicates that at least one surrogate has been encountered: the surrogates may be matched
+ * or not (thus this function does not validate). If the returned error code is SUCCESS,
+ * then the input contains no surrogate, is in the Basic Multilingual Plane, and is necessarily valid.
+ */
+simdutf_warn_unused result utf8_length_from_utf16_with_replacement(const char16_t *input,
+                                                  size_t length) noexcept;
+/**
  * Compute the number of bytes that this UTF-16LE string would require in UTF-8 format.
  *
  * This function does not validate the input. It is acceptable to pass invalid UTF-16 strings but in such cases
@@ -961,6 +959,69 @@ simdutf_warn_unused size_t utf8_length_from_utf16le(const char16_t * input, size
  * @return the number of bytes required to encode the UTF-16BE string as UTF-8
  */
 simdutf_warn_unused size_t utf8_length_from_utf16be(const char16_t * input, size_t length) noexcept;
+
+/**
+ * Compute the number of bytes that this UTF-16LE string would require in UTF-8
+ * format even when the UTF-16LE content contains mismatched surrogates
+ * that have to be replaced by the replacement character (0xFFFD).
+ *
+ * @param input         the UTF-16LE string to convert
+ * @param length        the length of the string in 2-byte code units (char16_t)
+ * @return the number of bytes required to encode the UTF-16LE string as UTF-8
+ * @return a result pair struct (of type simdutf::result containing the two fields error and count)
+ * where the count is the number of bytes required to encode the UTF-16LE string as UTF-8, and the
+ * error code is either SUCCESS or SURROGATE. The count is correct regardless of the error field.
+ * When SURROGATE is returned, it does not indicate an error in the case of this function:
+ * it indicates that at least one surrogate has been encountered: the surrogates may be matched
+ * or not (thus this function does not validate). If the returned error code is SUCCESS,
+ * then the input contains no surrogate, is in the Basic Multilingual Plane, and is necessarily valid.
+ */
+simdutf_warn_unused result utf8_length_from_utf16le_with_replacement(
+    const char16_t *input, size_t length) noexcept;
+
+
+/**
+ * Compute the number of bytes that this UTF-16BE string would require in UTF-8
+ * format even when the UTF-16BE content contains mismatched surrogates
+ * that have to be replaced by the replacement character (0xFFFD).
+ *
+ * @param input         the UTF-16BE string to convert
+ * @param length        the length of the string in 2-byte code units (char16_t)
+ * @return a result pair struct (of type simdutf::result containing the two fields error and count)
+ * where the count is the number of bytes required to encode the UTF-16LE string as UTF-8, and
+ * the error code is either SUCCESS or SURROGATE. The count is correct regardless of the error field.
+ * When SURROGATE is returned, it does not indicate an error in the case of this function:
+ * it indicates that at least one surrogate has been encountered: the surrogates may be matched
+ * or not (thus this function does not validate). If the returned error code is SUCCESS,
+ * then the input contains no surrogate, is in the Basic Multilingual Plane, and is necessarily valid.
+ */
+simdutf_warn_unused result utf8_length_from_utf16be_with_replacement(
+    const char16_t *input, size_t length) noexcept;
+
+/**
+ * Compute the number of bytes that this UTF-16LE string would require in UTF-8
+ * format even when the UTF-16LE content contains mismatched surrogates
+ * that have to be replaced by the replacement character (0xFFFD).
+ *
+ * @param input         the UTF-16LE string to convert
+ * @param length        the length of the string in 2-byte code units (char16_t)
+ * @return a result pair struct (of type simdutf::result containing the two fields error and count) where the count is the number of bytes required to encode the UTF-16LE string as UTF-8, and the error code is either SUCCESS or SURROGATE. The count is correct regardless of the error field.
+ */
+simdutf_warn_unused result utf8_length_from_utf16le_with_replacement(
+    const char16_t *input, size_t length) noexcept;
+
+/**
+ * Compute the number of bytes that this UTF-16BE string would require in UTF-8
+ * format even when the UTF-16BE content contains mismatched surrogates
+ * that have to be replaced by the replacement character (0xFFFD).
+ *
+ * @param input         the UTF-16BE string to convert
+ * @param length        the length of the string in 2-byte code units (char16_t)
+ * @return a result pair struct (of type simdutf::result containing the two fields error and count) where the count is the number of bytes required to encode the UTF-16LE string as UTF-8, and the error code is either SUCCESS or SURROGATE. The count is correct regardless of the error field.
+ */
+simdutf_warn_unused result utf8_length_from_utf16be_with_replacement(
+    const char16_t *input, size_t length) noexcept;
+
 
 /**
  * Compute the number of bytes that this UTF-32 string would require in UTF-8 format.
@@ -1899,7 +1960,7 @@ This forgiving approach makes base64 decoding robust for web use, but it enforce
 
 The conversion of binary data to base64 always succeeds and is relatively simple. Suppose
 that you have an original input of binary data `source` (e.g., `std::vector<char>`).
-```C++
+```cpp
 std::vector<char> buffer(simdutf::base64_length_from_binary(source.size()));
 simdutf::binary_to_base64(source.data(), source.size(), buffer.data());
 ```
@@ -1907,7 +1968,7 @@ simdutf::binary_to_base64(source.data(), source.size(), buffer.data());
 Decoding base64 requires validation and, thus, error handling. Furthermore, because
 we prune ASCII spaces, we may need to adjust the result size afterward.
 
-```C++
+```cpp
 std::vector<char> buffer(simdutf::maximal_binary_length_from_base64(base64.data(), base64.size()));
 simdutf::result r = simdutf::base64_to_binary(base64.data(), base64.size(), buffer.data());
 if(r.error) {
@@ -1930,7 +1991,7 @@ They are all valid WHATWG base64 inputs, except for the last one.
 
 Let us process them with actual code.
 
-```C++
+```cpp
   std::vector<std::string> sources = {
       "  A  A  ", "  A  A  G  A  /  v  8  ", "  A  A  G  A  /  v  8  =  ", "  A  A  G  A  /  v  8  =  =  "};
   std::vector<std::vector<uint8_t>> expected = {
@@ -1977,13 +2038,13 @@ Another benefit of the `base64_to_binary_safe` functions is that they inform you
 about how much data was written to the output buffer, even when there is a fatal
 error.
 This number might not be 'maximal': our fast functions may leave some data that could
-have been decoded prior to a bad character undecode. With the
+have been decoded prior to a bad character undecoded. With the
 `base64_to_binary_safe` function, you also have the option of requesting that as much
 of the data as possible is decoded despite the error by setting the `decode_up_to_bad_char`
 parameter to true (it defaults to false for best performance).
 
 
-```C++
+```cpp
   size_t len = 72; // for simplicity we chose len divisible by 3
   std::vector<char> base64(len, 'a'); // we want to decode 'aaaaa....'
   std::vector<char> back((len + 3) / 4 * 3);
@@ -2120,7 +2181,7 @@ then decoding `"ZXhhZg"` decodes into `exa` (and `Zg` is left over).
 
 The specification of our base64 functions is as follows:
 
-```C++
+```cpp
 
 // base64_options are used to specify the base64 encoding options.
 // ASCII spaces are ' ', '\t', '\n', '\r', '\f'
@@ -2157,8 +2218,12 @@ enum last_chunk_handling_options : uint64_t {
 
 /**
  * Provide the maximal binary length in bytes given the base64 input.
- * In general, if the input contains ASCII spaces, the result will be less than
- * the maximum length.
+ * As long as the input does not contain ignorable characters (e.g., ASCII spaces
+ * or linefeed characters), the result is exact. In particular, the function
+ * checks for padding characters.
+ *
+ * The function is fast (constant time). It checks up to two characters at
+ * the end of the string. The input is not otherwise validated or read.
  *
  * @param input         the base64 input to process
  * @param length        the length of the base64 input in bytes
@@ -2168,8 +2233,12 @@ simdutf_warn_unused size_t maximal_binary_length_from_base64(const char * input,
 
 /**
  * Provide the maximal binary length in bytes given the base64 input.
- * In general, if the input contains ASCII spaces, the result will be less than
- * the maximum length.
+ * As long as the input does not contain ignorable characters (e.g., ASCII spaces
+ * or linefeed characters), the result is exact. In particular, the function
+ * checks for padding characters.
+ *
+ * The function is fast (constant time). It checks up to two characters at
+ * the end of the string. The input is not otherwise validated or read.
  *
  * @param input         the base64 input to process, in ASCII stored as 16-bit units
  * @param length        the length of the base64 input in 16-bit units
@@ -2248,6 +2317,19 @@ simdutf_warn_unused size_t base64_length_from_binary(size_t length, base64_optio
 
 
 /**
+ * Provide the base64 length in bytes given the length of a binary input,
+ * taking into account line breaks.
+ *
+ * @param length        the length of the input in bytes
+ * @param options       the base64 options to use, can be base64_default or base64_url, is base64_default by default.
+ * @param line_length   the length of lines, must be at least 4 (otherwise it is interpreted as 4),
+ * @return number of base64 bytes
+ */
+simdutf_warn_unused size_t
+base64_length_from_binary_with_lines(size_t length, base64_options options, size_t line_length) noexcept;
+
+
+/**
  * Convert a binary input to a base64 output.
  *
  * The default option (simdutf::base64_default) uses the characters `+` and `/` as part of its alphabet.
@@ -2265,6 +2347,35 @@ simdutf_warn_unused size_t base64_length_from_binary(size_t length, base64_optio
  * @return number of written bytes, will be equal to base64_length_from_binary(length, options)
  */
 size_t binary_to_base64(const char * input, size_t length, char* output, base64_options options = base64_default) noexcept;
+
+
+/**
+ * Convert a binary input to a base64 output with line breaks.
+ *
+ * The default option (simdutf::base64_default) uses the characters `+` and `/`
+ * as part of its alphabet. Further, it adds padding (`=`) at the end of the
+ * output to ensure that the output length is a multiple of four.
+ *
+ * The URL option (simdutf::base64_url) uses the characters `-` and `_` as part
+ * of its alphabet. No padding is added at the end of the output.
+ *
+ * This function always succeeds.
+ *
+ * The default line length is default_line_length (76)
+ *
+ * @param input         the binary to process
+ * @param length        the length of the input in bytes
+ * @param output        the pointer to a buffer that can hold the conversion
+ * result (should be at least base64_length_from_binary_with_lines(length, options, line_length) bytes long)
+ * @param line_length   the length of lines, must be at least 4 (otherwise it is interpreted as 4),
+ * @param options       the base64 options to use, can be base64_default or
+ * base64_url, is base64_default by default.
+ * @return number of written bytes, will be equal to
+ * base64_length_from_binary_with_lines(length, options)
+ */
+size_t binary_to_base64_with_lines(const char *input, size_t length, char *output,
+                        size_t line_length = simdutf::default_line_length,
+                        base64_options options = base64_default) noexcept;
 
 /**
  * Convert a base64 input to a binary output.
@@ -2423,7 +2534,7 @@ simdutf_warn_unused const char16_t *find(const char16_t *start, const char16_t *
 If you are compiling with C++20 or later, span support is enabled. This allows you to use simdutf in a safer and more expressive way, without manually handling pointers and sizes.
 
 The span interface is easy to use. If you have a container like `std::vector` or `std::array`, you can pass the container directly. If you have a pointer and a size, construct a `std::span` and pass it.
-When dealing with ranges of bytes (like `char`), anything that has a `std::span-like` interface (has appopriate `data()` and `size()` member functions) is accepted. Ranges of larger types are accepted as `std::span` arguments.
+When dealing with ranges of bytes (like `char`), anything that has a `std::span-like` interface (has appropriate `data()` and `size()` member functions) is accepted. Ranges of larger types are accepted as `std::span` arguments.
 
 ## Example
 
@@ -2464,7 +2575,7 @@ sutf -f UTF-8 -t UTF-16LE -o output_file.txt first_input_file.txt second_input_f
 Manual implementation selection
 -------------------------------
 
-When compiling the llibrary for x64 processors, we build several implementations of each functions. At runtime, the best
+When compiling the library for x64 processors, we build several implementations of each functions. At runtime, the best
 implementation is picked automatically. Advanced users may want to pick a particular implementation, thus bypassing our
 runtime detection. It is possible and even relatively convenient to do so. The following C++ program checks all the available
 implementation, and selects one as the default:
@@ -2516,7 +2627,7 @@ Thread safety
 -----------
 
 We built simdutf with thread safety in mind. The simdutf library is single-threaded throughout.
-The CPU detection, which runs the first time parsing is attempted and switches to the fastest parser for your CPU, is transparent and thread-safe. Our runtime dispatching is based on global objects that are instantiated at the beginning of the main thread and may be discarded at the end of the main thread. If you have multiple threads running and some threads use the library while the main thread is cleaning up ressources, you may encounter issues. If you expect such problems, you may consider using [std::quick_exit](https://en.cppreference.com/w/cpp/utility/program/quick_exit).
+The CPU detection, which runs the first time parsing is attempted and switches to the fastest parser for your CPU, is transparent and thread-safe. Our runtime dispatching is based on global objects that are instantiated at the beginning of the main thread and may be discarded at the end of the main thread. If you have multiple threads running and some threads use the library while the main thread is cleaning up resources, you may encounter issues. If you expect such problems, you may consider using [std::quick_exit](https://en.cppreference.com/w/cpp/utility/program/quick_exit).
 
 
 References
@@ -2528,6 +2639,28 @@ References
 * Wojciech Muła, Daniel Lemire, [Base64 encoding and decoding at almost the speed of a memory copy](https://arxiv.org/abs/1910.05109), Software: Practice and Experience 50 (2), 2020.
 * Wojciech Muła, Daniel Lemire, [Faster Base64 Encoding and Decoding using AVX2 Instructions](https://arxiv.org/abs/1704.00605), ACM Transactions on the Web 12 (3), 2018.
 
+
+Citing this work
+----------------
+
+If you use this library in your research, please cite our work:
+
+```bibtex
+@misc{simdutf,
+  title={The simdutf library: {Unicode} validation and transcoding at billions of characters per second},
+  author={Daniel Lemire and Wojciech Mu{\l}a and Paul Dreik and others},
+  year={2021},
+  note={\url{https://github.com/simdutf/simdutf}}
+}
+```
+
+
+Stars
+-------
+
+
+
+[![Star History Chart](https://api.star-history.com/svg?repos=simdutf/simdutf&type=Date)](https://www.star-history.com/#simdutf/simdutf&Date)
 
 License
 -------

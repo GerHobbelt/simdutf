@@ -254,6 +254,12 @@ public:
 #if SIMDUTF_FEATURE_UTF8 && SIMDUTF_FEATURE_UTF16
   simdutf_warn_unused size_t
   utf16_length_from_utf8(const char *input, size_t length) const noexcept;
+  simdutf_warn_unused result utf8_length_from_utf16le_with_replacement(
+      const char16_t *input, size_t length) const noexcept;
+  ;
+  simdutf_warn_unused result utf8_length_from_utf16be_with_replacement(
+      const char16_t *input, size_t length) const noexcept;
+  ;
 #endif // SIMDUTF_FEATURE_UTF8 && SIMDUTF_FEATURE_UTF16
 
 #if SIMDUTF_FEATURE_UTF8 && SIMDUTF_FEATURE_UTF32
@@ -302,6 +308,9 @@ public:
           last_chunk_handling_options::loose) const noexcept;
   size_t binary_to_base64(const char *input, size_t length, char *output,
                           base64_options options) const noexcept;
+  size_t binary_to_base64_with_lines(const char *input, size_t length,
+                                     char *output, size_t line_length,
+                                     base64_options options) const noexcept;
   const char *find(const char *start, const char *end,
                    char character) const noexcept;
   const char16_t *find(const char16_t *start, const char16_t *end,

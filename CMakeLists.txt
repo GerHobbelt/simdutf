@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.15)
 project(simdutf
   DESCRIPTION "Fast Unicode validation, transcoding and processing"
   LANGUAGES CXX
-  VERSION 7.4.0
+  VERSION 7.7.1
 )
 
 include (TestBigEndian)
@@ -23,9 +23,10 @@ include(GNUInstallDirs)
 include(CTest)
 include(cmake/simdutf-flags.cmake)
 
-set(SIMDUTF_LIB_VERSION "26.0.0" CACHE STRING "simdutf library version")
-set(SIMDUTF_LIB_SOVERSION "26" CACHE STRING "simdutf library soversion")
+set(SIMDUTF_LIB_VERSION "29.0.0" CACHE STRING "simdutf library version")
+set(SIMDUTF_LIB_SOVERSION "29" CACHE STRING "simdutf library soversion")
 option(SIMDUTF_TESTS "Whether the tests are included as part of the CMake Build." ON)
+option(SIMDUTF_FAST_TESTS "Whether parameters to the tests are adapated to make them execute quicker" OFF)
 option(SIMDUTF_ATOMIC_BASE64_TESTS "Whether to test the atomic base64 functions. (OFF by default)" OFF)
 option(SIMDUTF_BENCHMARKS "Whether the benchmarks are included as part of the CMake Build." OFF)
 option(SIMDUTF_TOOLS "Whether the tools are included as part of the CMake build. Requires C++17 or better." ON)

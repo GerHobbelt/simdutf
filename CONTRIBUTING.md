@@ -107,6 +107,18 @@ Comments: Document complex logic clearly. It is fine to use multiple lines of te
 
 Dependencies: Avoid new external dependencies unless approved.
 
+
+## Adding functions
+
+Adding a new function to simdutf can require some effort. We wrote a python
+script to generate it. Consider running the python script:
+
+```shell
+python3 scripts/add_function.py add.sig
+```
+
+Read [README_ADD_FUNCTION.md](scripts/README_ADD_FUNCTION.md) for details.
+
 ## Testing
 
 All changes must have been tested.
@@ -120,7 +132,7 @@ ctest --test-dir build
 Add tests in the tests/directory for new features or fixes, covering edge cases and performance.
 Use our macros when building tests:
 
-```C++
+```cpp
 
 TEST(roundtrip_base64_url_with_garbage) {
     ASSERT_TRUE(1==1);

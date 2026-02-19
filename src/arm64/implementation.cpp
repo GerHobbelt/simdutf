@@ -1175,6 +1175,20 @@ simdutf_warn_unused size_t implementation::utf16_length_from_utf8(
     const char *input, size_t length) const noexcept {
   return utf8::utf16_length_from_utf8(input, length);
 }
+simdutf_warn_unused result
+implementation::utf8_length_from_utf16le_with_replacement(
+    const char16_t *input, size_t length) const noexcept {
+  return arm64_utf8_length_from_utf16_with_replacement<endianness::LITTLE>(
+      input, length);
+}
+
+simdutf_warn_unused result
+implementation::utf8_length_from_utf16be_with_replacement(
+    const char16_t *input, size_t length) const noexcept {
+  return arm64_utf8_length_from_utf16_with_replacement<endianness::BIG>(input,
+                                                                        length);
+}
+
 #endif // SIMDUTF_FEATURE_UTF8 && SIMDUTF_FEATURE_UTF16
 
 #if SIMDUTF_FEATURE_UTF8 && SIMDUTF_FEATURE_UTF32
@@ -1376,6 +1390,12 @@ size_t implementation::binary_to_base64(const char *input, size_t length,
                                         char *output,
                                         base64_options options) const noexcept {
   return encode_base64(output, input, length, options);
+}
+
+size_t implementation::binary_to_base64_with_lines(
+    const char *input, size_t length, char *output, size_t line_length,
+    base64_options options) const noexcept {
+  return encode_base64_impl<true>(output, input, length, options, line_length);
 }
 
 const char *implementation::find(const char *start, const char *end,
