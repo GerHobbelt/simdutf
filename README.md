@@ -1,9 +1,8 @@
+# simdutf: Text processing at billions of characters per second
 
-simdutf: Text processing at billions of characters per second [![Alpine Linux](https://github.com/simdutf/simdutf/actions/workflows/alpine.yml/badge.svg)](https://github.com/simdutf/simdutf/actions/workflows/alpine.yml) [![MSYS2-CLANG-CI](https://github.com/simdutf/simdutf/actions/workflows/msys2-clang.yml/badge.svg)](https://github.com/simdutf/simdutf/actions/workflows/msys2-clang.yml) [![Ubuntu 22.04 Sanitized CI (GCC 12, CXX 20)](https://github.com/simdutf/simdutf/actions/workflows/ubuntu22-cxx20.yml/badge.svg)](https://github.com/simdutf/simdutf/actions/workflows/ubuntu22-cxx20.yml)
-===============================================
+<!-- if(github) { (this is used by the github pages export, don't modify!) -->
 
-
-
+[![Alpine Linux](https://github.com/simdutf/simdutf/actions/workflows/alpine.yml/badge.svg)](https://github.com/simdutf/simdutf/actions/workflows/alpine.yml) [![MSYS2-CLANG-CI](https://github.com/simdutf/simdutf/actions/workflows/msys2-clang.yml/badge.svg)](https://github.com/simdutf/simdutf/actions/workflows/msys2-clang.yml) [![Ubuntu 22.04 Sanitized CI (GCC 12, CXX 20)](https://github.com/simdutf/simdutf/actions/workflows/ubuntu22-cxx20.yml/badge.svg)](https://github.com/simdutf/simdutf/actions/workflows/ubuntu22-cxx20.yml)
 
 <img src="doc/logo.svg" width="25%" style="float: right">
 
@@ -27,6 +26,9 @@ simdutf: Text processing at billions of characters per second [![Alpine Linux](h
   - [References](#references)
   - [License](#license)
 
+<!-- } (this is used by the github pages export, don't modify!) -->
+
+<!-- base64 KioqUGxlYXNlIHZpc2l0IGh0dHBzOi8vZ2l0aHViLmNvbS9zaW1kdXRmL3NpbWR1dGYgZm9yIHNvdXJjZSBjb2RlIGFuZCBpc3N1ZSB0cmFja2luZyEqKioK (this is used by the github pages export, don't modify!) -->
 
 Most modern software relies on the [Unicode standard](https://en.wikipedia.org/wiki/Unicode).
 In memory, Unicode strings are represented using either
@@ -70,8 +72,7 @@ We have exhaustive tests, including an elaborate fuzzing setup. The library has 
 
 If using C++23 or newer, there is experimental support for using the library at compile time (constexpr).
 
-Real-World Usage
------
+## Real-World Usage
 
 The simdutf library is used by:
 - [Node.js](https://nodejs.org/en/) (19.4.0 or better, 20.0 or better, 18.15 or better), a standard JavaScript runtime environment,
@@ -90,8 +91,7 @@ The simdutf library is used by:
 
 
 
-How fast is it?
------------------
+## How fast is it?
 
 The adoption of the simdutf library by the popular Node.js JavaScript runtime lead to a significant
 performance gain:
@@ -122,11 +122,7 @@ Datasets: https://github.com/lemire/unicode_lipsum
 
 Please refer to our benchmarking tool for a proper interpretation of the numbers. Our results are reproducible.
 
-
-
-
-Requirements
--------
+## Requirements
 
 - C++11 compatible compiler. We support LLVM clang, GCC, Visual Studio. (Our tests and benchmark tools requires C++17.) Be aware that GCC under Windows is buggy and thus unsupported.
 - For high speed, you should have a recent 64-bit system (e.g., ARM, x64, RISC-V with vector extensions, Loongson, POWER).
@@ -135,29 +131,26 @@ Requirements
 - To benefit from RISC-V Vector Extensions on RISC-V systems, you should compile specifically for the desired architecture. E.g., add `-march=rv64gcv` as a compiler flag when using a version of GCC or LLVM which supports these extensions (such as GCC 14 or better). The command `CXXFLAGS=-march=rv64gcv cmake -B build` may suffice.
 - We recommend that Visual Studio users compile with LLVM (ClangCL). Using LLVM as a front-end inside Visual Studio provides faster release builds and better runtime performance.
 
-Usage (Usage)
--------
-
+## Usage (Usage)
 
 We made a video to help you get started with the library.
 
 [![the simdutf library](http://img.youtube.com/vi/H9NZtb7ykYs/0.jpg)](https://www.youtube.com/watch?v=H9NZtb7ykYs)<br />
 
 
-Quick Start
------------
+### Quick Start
 
 Linux or macOS users might follow the following instructions if they have a recent C++ compiler installed and the standard utilities (`wget`, `unzip`, etc.)
 
 
 1. Pull the library in a directory
    ```
-   wget https://github.com/simdutf/simdutf/releases/download/v7.7.1/singleheader.zip
+   wget https://github.com/simdutf/simdutf/releases/download/v8.0.0/singleheader.zip
    unzip singleheader.zip
    ```
    You can replace `wget` by `curl -OL https://...` if you prefer.
 2. Compile
-   ```
+   ```shell
    c++ -std=c++17 -o amalgamation_demo amalgamation_demo.cpp
    ```
 3. `./amalgamation_demo`
@@ -175,10 +168,9 @@ Linux or macOS users might follow the following instructions if they have a rece
 *We strongly discourage working from our main git branch. You should never use our main branch
 in production. [Use our releases](https://github.com/simdutf/simdutf/releases/). They are tagged as `vX.Y.Z`.*
 
-Usage (CMake)
--------
+### Usage (CMake)
 
-```
+```shell
 cmake -B build
 cmake --build build
 cd build
@@ -187,51 +179,23 @@ ctest .
 
 Visual Studio users must specify whether they want to build the Release or Debug version.
 
-To run transcoding benchmarks, execute the `benchmark` command. You can get help on its
-usage by first building it and then calling it with the `--help` flag.
-E.g., under Linux you may do the following:
-
-```
-cmake -B build -D SIMDUTF_BENCHMARKS=ON
-cmake --build build
-./build/benchmarks/benchmark --help
-./build/benchmarks/base64/benchmark_base64 --help
-```
-
-E.g., to run base64 decoding benchmarks on DNS data (short inputs), do
-
-```
-./build/benchmarks/base64/benchmark_base64 -d pathto/base64data/dns/*.txt
-```
-
-where pathto/base64data should contain the path to a clone of
-the repository https://github.com/lemire/base64data.
-
-Instructions are similar for Visual Studio users.
-
 To use the library as a CMake dependency in your project, please see `tests/installation_tests/from_fetch` for
 an example.
-
-Since ICU is so common and popular, we assume that you may have it already on your system. When
-it is not found, it is simply omitted from the benchmarks. Thus, to benchmark against ICU, make
-sure you have ICU installed on your machine and that cmake can find it. For macOS, you may
-install it with brew using `brew install icu4c`. If you have ICU on your system but cmake cannot
-find it, you may need to provide cmake with a path to ICU, such as `ICU_ROOT=/usr/local/opt/icu4c cmake -B build`.
 
 You may also use a package manager. E.g.,  [we have a complete example using vcpkg](https://github.com/simdutf/simdutf-vcpkg).
 
 
-Single-header version
-----------------------
+
+## Single-header version
 
 You can create a single-header version of the library where
 all of the code is put into two files (`simdutf.h` and `simdutf.cpp`).
 We publish a zip archive containing these files, e.g., see
-https://github.com/simdutf/simdutf/releases/download/v7.7.1/singleheader.zip
+https://github.com/simdutf/simdutf/releases/download/v8.0.0/singleheader.zip
 
 You may generate it on your own using a Python script.
 
-```
+```shell
 python3 ./singleheader/amalgamate.py
 ```
 
@@ -239,14 +203,13 @@ We require Python 3 or better.
 
 Under Linux and macOS, you may test it as follows:
 
-```
+```shell
 cd singleheader
 c++ -o amalgamation_demo amalgamation_demo.cpp -std=c++17
 ./amalgamation_demo
 ```
 
-Single-header version with limited features
--------------------------------------------
+### Single-header version with limited features
 
 When creating a single-header version, it is possible to limit which
 features are enabled. Then the API of library is limited too and the
@@ -285,14 +248,13 @@ enabled, we may test it using preprocessor:
 ```
 
 
-Packages
+### Packages
 ------
 
 [![Packaging status](https://repology.org/badge/vertical-allrepos/simdutf.svg)](https://repology.org/project/simdutf/versions)
 
 
-Example
----------
+### Example
 
 Using the single-header version, you could compile the following program.
 
@@ -349,8 +311,7 @@ int main(int argc, char *argv[]) {
 }
 ```
 
-API
------
+## API
 
 Our API is made of a few non-allocating functions. They typically take a pointer and a length as a parameter,
 and they sometimes take a pointer to an output buffer. Users are responsible for memory allocation.
@@ -1943,8 +1904,7 @@ void change_endianness_utf16(const char16_t * input, size_t length, char16_t * o
 
 ```
 
-Base64
------
+## Base64
 
 The WHATWG (Web Hypertext Application Technology Working Group) defines a "forgiving" base64 decoding algorithm in its Infra Standard, which is used in web contexts like the JavaScript atob() function. This algorithm is more lenient than strict RFC 4648 base64, primarily to handle common web data variations. It ignores all ASCII whitespace (spaces, tabs, newlines, etc.), allows omitting padding characters (=), and decodes inputs as long as they meet certain length and character validity rules. However, it still rejects inputs that could lead to ambiguous or incomplete byte formation.
 
@@ -2496,8 +2456,7 @@ simdutf_warn_unused result base64_to_binary_safe(const char16_t * input, size_t 
       bool decode_up_to_bad_char = false) noexcept;
 ```
 
-Find
------
+## Find
 
 The C++ standard library provides `std::find` for locating a character in a string, but its performance can be suboptimal on modern hardware. To address this, we introduce `simdutf::find`, a high-performance alternative optimized for recent processors using SIMD instructions. It operates on raw pointers (`char` or `char16_t`) for maximum efficiency.
 
@@ -2531,14 +2490,14 @@ simdutf_warn_unused const char16_t *find(const char16_t *start, const char16_t *
                               char16_t character) noexcept;
 ```
 
-# C++20 and std::span usage in simdutf
+## C++20 and std::span usage in simdutf
 
 If you are compiling with C++20 or later, span support is enabled. This allows you to use simdutf in a safer and more expressive way, without manually handling pointers and sizes.
 
 The span interface is easy to use. If you have a container like `std::vector` or `std::array`, you can pass the container directly. If you have a pointer and a size, construct a `std::span` and pass it.
 When dealing with ranges of bytes (like `char`), anything that has a `std::span-like` interface (has appropriate `data()` and `size()` member functions) is accepted. Ranges of larger types are accepted as `std::span` arguments.
 
-## Example
+### Example
 
 Suppose you want to convert a UTF-16 string to UTF-8:
 
@@ -2556,10 +2515,11 @@ size_t written = simdutf::convert_utf16_to_utf8_safe(utf16_input, utf8_output);
 ```
 
 
-## Note
+### Note
+
 - You are still responsible for providing a sufficiently large output buffer, just as with the pointer/size API.
 
-# C++23 and constexpr support
+## C++23 and constexpr support
 
 If using C++23 or newer, it is possible to use the functions in the public api at compile time, with the following exceptions:
 
@@ -2570,7 +2530,6 @@ The following functions are also not constexpr but expected to be so in a future
 
   * `autodetect_encoding`
   * `detect_encodings`
-  * `base64_to_binary_safe`
 
 Here is an example:
 
@@ -2585,15 +2544,15 @@ To use the constexpr functionality, your have to go through the span overloads.
 
 The constexpr functionality is tested with `static_assert` in the unit tests which is handy - if it compiled, the unit tests passed!
 
-## Note - the constexpr support is experimental!
+### Note - the constexpr support is experimental!
 
 The constexpr support is implemented with functions that are already tested and proven. There were however
 modifications made to make it usable at constexpr time. Also, when in a constexpr context, the functions are not invoked exactly
-as during normal dynamic invocation. For this reason, there might have slipped in subtile bugs and the constexpr
+as during normal dynamic invocation. For this reason, there might have slipped in subtle bugs and the constexpr
 support is considered experimental. Please report any bugs you encounter!
 
-The sutf command-line tool
-------
+## The sutf command-line tool
+
 We also provide a command-line tool which can be build as follows:
 ```
 cmake -B build && cmake --build build --target sutf
@@ -2606,8 +2565,7 @@ during compilation. The following is an example of transcoding two input files t
 sutf -f UTF-8 -t UTF-16LE -o output_file.txt first_input_file.txt second_input_file.txt
 ```
 
-Manual implementation selection
--------------------------------
+## Manual implementation selection
 
 When compiling the library for x64 processors, we build several implementations of each functions. At runtime, the best
 implementation is picked automatically. Advanced users may want to pick a particular implementation, thus bypassing our
@@ -2657,15 +2615,70 @@ int main(void) {
 }
 ```
 
-Thread safety
------------
+
+
+## Benchmarks
+
+To run benchmarks, build the project with benchmarks enabled.  Our default benchmarks are in the  `benchmark` command. You can get help on its
+usage by first building it and then calling it with the `--help` flag.
+E.g., under Linux you may do the following:
+
+```shell
+cmake -B build -D SIMDUTF_BENCHMARKS=ON
+cmake --build build
+./build/benchmarks/benchmark --help
+```
+
+
+The standard benchmark tool `benchmark` provides comprehensive transcoding benchmarks between different encodings. It supports various procedures like converting UTF-8 to UTF-16, UTF-16 to UTF-8, and more. You can list available procedures with `--procedures`, run specific benchmarks, or use filters to select particular tests. For example, to benchmark UTF-8 to UTF-16 conversion on a file, use `./build/benchmarks/benchmark --procedure utf8_to_utf16 file.txt`. It outputs detailed performance metrics including throughput in GB/s and CPU cycles.
+
+Since ICU is so common and popular, we assume that you may have it already on your system. When
+it is not found, it is simply omitted from the benchmarks. Thus, to benchmark against ICU, make
+sure you have ICU installed on your machine and that cmake can find it. For macOS, you may
+install it with brew using `brew install icu4c`. If you have ICU on your system but cmake cannot
+find it, you may need to provide cmake with a path to ICU, such as `ICU_ROOT=/usr/local/opt/icu4c cmake -B build`.
+
+
+### Base64 benchmarks
+
+We also have a base64 benchmark tool (`benchmark_base64`).
+
+```shell
+./build/benchmarks/base64/benchmark_base64 --help
+```
+
+E.g., to run base64 decoding benchmarks on DNS data (short inputs), do
+
+```shell
+./build/benchmarks/base64/benchmark_base64 -d pathto/base64data/dns/*.txt
+```
+
+where pathto/base64data should contain the path to a clone of
+the repository https://github.com/lemire/base64data.
+
+
+### Short input benchmarks
+
+To run short benchmarks on various SIMDUTF functions with incremental input sizes, use `shortbench`:
+
+```shell
+./build/benchmarks/shortbench --help
+./build/benchmarks/shortbench --list
+./build/benchmarks/shortbench --function validate_utf8 # validate a zero buffer
+./build/benchmarks/shortbench --function validate_utf8 README.md
+./build/benchmarks/shortbench --function utf8_length_from_latin1 --max-size 256 somefile.txt
+```
+
+This will benchmark the selected function on the input file, testing sizes from 1 byte up to the specified max size (default 128), and output a table with timing and performance metrics.
+
+
+## Thread safety
 
 We built simdutf with thread safety in mind. The simdutf library is single-threaded throughout.
 The CPU detection, which runs the first time parsing is attempted and switches to the fastest parser for your CPU, is transparent and thread-safe. Our runtime dispatching is based on global objects that are instantiated at the beginning of the main thread and may be discarded at the end of the main thread. If you have multiple threads running and some threads use the library while the main thread is cleaning up resources, you may encounter issues. If you expect such problems, you may consider using [std::quick_exit](https://en.cppreference.com/w/cpp/utility/program/quick_exit).
 
 
-References
------------
+## References
 
 * Robert Clausecker, Daniel Lemire, [Transcoding Unicode Characters with AVX-512 Instructions](https://arxiv.org/abs/2212.05098),  Software: Practice and Experience 53 (12), 2023.
 * Daniel Lemire, Wojciech Muła,  [Transcoding Billions of Unicode Characters per Second with SIMD Instructions](https://arxiv.org/abs/2109.10433), Software: Practice and Experience 52 (2), 2022.
@@ -2674,8 +2687,7 @@ References
 * Wojciech Muła, Daniel Lemire, [Faster Base64 Encoding and Decoding using AVX2 Instructions](https://arxiv.org/abs/1704.00605), ACM Transactions on the Web 12 (3), 2018.
 
 
-Citing this work
-----------------
+## Citing this work
 
 If you use this library in your research, please cite our work:
 
@@ -2688,16 +2700,32 @@ If you use this library in your research, please cite our work:
 }
 ```
 
+## C wrapper (C11 or better)
 
-Stars
--------
+*This is currently experimental. We are committed to maintaining the C API but there might be issues with
+our implementation.*
+
+We provide a thin C API that wraps the C++ `simdutf` library. It is intended
+for applications that prefer or require a plain C interface. The `simdutf_c.h`
+defines the interface.
+
+The C API exposes functions for validation, transcoding, size estimation, `find` helpers,
+and Base64 encode/decode helpers. Results are returned using the `simdutf_result` struct
+which contains an `error_code` field and additional fields when relevant.
+
+We provide a simple C demo using the C wrapper at `amalgamation_demo.c`.
+It shows validating UTF-8, converting UTF-8 to UTF-16LE and back, and checking the round-trip.
+Refer to `singleheader/README.md` for instructions. Note that the simdutf library requires
+a C++ standard library (e.g., libstdc++, libc++) at runtime, either statically or dynamically linked.
+
+Note: The C API is currently not aware of amalgamation with limited features. It expects the full simdutf library.
 
 
+## Stars
 
 [![Star History Chart](https://api.star-history.com/svg?repos=simdutf/simdutf&type=Date)](https://www.star-history.com/#simdutf/simdutf&Date)
 
-License
--------
+## License
 
 This code is made available under the [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0.html) as well as the MIT license. As a user, you can pick the license you prefer.
 

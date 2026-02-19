@@ -150,16 +150,16 @@ static const rvv::implementation *get_rvv_singleton() {
   return &rvv_singleton;
 }
 #endif
-#if SIMDUTF_IMPLEMENTATION_LSX
-static const lsx::implementation *get_lsx_singleton() {
-  static const lsx::implementation lsx_singleton{};
-  return &lsx_singleton;
-}
-#endif
 #if SIMDUTF_IMPLEMENTATION_LASX
 static const lasx::implementation *get_lasx_singleton() {
   static const lasx::implementation lasx_singleton{};
   return &lasx_singleton;
+}
+#endif
+#if SIMDUTF_IMPLEMENTATION_LSX
+static const lsx::implementation *get_lsx_singleton() {
+  static const lsx::implementation lsx_singleton{};
+  return &lsx_singleton;
 }
 #endif
 #if SIMDUTF_IMPLEMENTATION_FALLBACK
@@ -170,7 +170,7 @@ static const fallback::implementation *get_fallback_singleton() {
 #endif
 
 #if SIMDUTF_SINGLE_IMPLEMENTATION
-static const implementation *get_single_implementation() {
+simdutf_really_inline static const implementation *get_single_implementation() {
   return
   #if SIMDUTF_IMPLEMENTATION_ICELAKE
       get_icelake_singleton();
@@ -187,11 +187,11 @@ static const implementation *get_single_implementation() {
   #if SIMDUTF_IMPLEMENTATION_PPC64
   get_ppc64_singleton();
   #endif
-  #if SIMDUTF_IMPLEMENTATION_LSX
-  get_lsx_singleton();
-  #endif
   #if SIMDUTF_IMPLEMENTATION_LASX
   get_lasx_singleton();
+  #endif
+  #if SIMDUTF_IMPLEMENTATION_LSX
+  get_lsx_singleton();
   #endif
   #if SIMDUTF_IMPLEMENTATION_FALLBACK
   get_fallback_singleton();
@@ -404,6 +404,20 @@ public:
   simdutf_warn_unused result utf8_length_from_utf16be_with_replacement(
       const char16_t *input, size_t length) const noexcept final override {
     return set_best()->utf8_length_from_utf16be_with_replacement(input, length);
+  }
+
+  simdutf_warn_unused size_t convert_utf16le_to_utf8_with_replacement(
+      const char16_t *input, size_t length,
+      char *utf8_buffer) const noexcept final override {
+    return set_best()->convert_utf16le_to_utf8_with_replacement(input, length,
+                                                                utf8_buffer);
+  }
+
+  simdutf_warn_unused size_t convert_utf16be_to_utf8_with_replacement(
+      const char16_t *input, size_t length,
+      char *utf8_buffer) const noexcept final override {
+    return set_best()->convert_utf16be_to_utf8_with_replacement(input, length,
+                                                                utf8_buffer);
   }
 
 #endif // SIMDUTF_FEATURE_UTF8 && SIMDUTF_FEATURE_UTF16
@@ -814,11 +828,11 @@ get_available_implementation_pointers() {
 #if SIMDUTF_IMPLEMENTATION_RVV
           get_rvv_singleton(),
 #endif
-#if SIMDUTF_IMPLEMENTATION_LSX
-          get_lsx_singleton(),
-#endif
 #if SIMDUTF_IMPLEMENTATION_LASX
           get_lasx_singleton(),
+#endif
+#if SIMDUTF_IMPLEMENTATION_LSX
+          get_lsx_singleton(),
 #endif
 #if SIMDUTF_IMPLEMENTATION_FALLBACK
           get_fallback_singleton(),
@@ -1011,6 +1025,16 @@ public:
   simdutf_warn_unused result utf8_length_from_utf16be_with_replacement(
       const char16_t *, size_t) const noexcept final override {
     return {OTHER, 0}; // Not supported
+  }
+
+  simdutf_warn_unused size_t convert_utf16le_to_utf8_with_replacement(
+      const char16_t *, size_t, char *) const noexcept final override {
+    return 0; // Not supported
+  }
+
+  simdutf_warn_unused size_t convert_utf16be_to_utf8_with_replacement(
+      const char16_t *, size_t, char *) const noexcept final override {
+    return 0; // Not supported
   }
 
 #endif // SIMDUTF_FEATURE_UTF8 && SIMDUTF_FEATURE_UTF16
@@ -1415,15 +1439,16 @@ get_active_implementation() {
 }
 
 #if SIMDUTF_SINGLE_IMPLEMENTATION
-const implementation *get_default_implementation() {
+simdutf_really_inline const implementation *get_default_implementation() {
   return internal::get_single_implementation();
 }
 #else
-internal::atomic_ptr<const implementation> &get_default_implementation() {
+simdutf_really_inline internal::atomic_ptr<const implementation> &
+get_default_implementation() {
   return get_active_implementation();
 }
 #endif
-#define SIMDUTF_GET_CURRENT_IMPLEMENTION
+#define SIMDUTF_GET_CURRENT_IMPLEMENTATION
 
 #if SIMDUTF_FEATURE_UTF8
 simdutf_warn_unused bool validate_utf8(const char *buf, size_t len) noexcept {
@@ -2215,6 +2240,27 @@ simdutf_warn_unused result utf8_length_from_utf16be_with_replacement(
     const char16_t *input, size_t length) noexcept {
   return get_default_implementation()
       ->utf8_length_from_utf16be_with_replacement(input, length);
+}
+
+simdutf_warn_unused size_t convert_utf16_to_utf8_with_replacement(
+    const char16_t *input, size_t length, char *utf8_buffer) noexcept {
+  #if SIMDUTF_IS_BIG_ENDIAN
+  return convert_utf16be_to_utf8_with_replacement(input, length, utf8_buffer);
+  #else
+  return convert_utf16le_to_utf8_with_replacement(input, length, utf8_buffer);
+  #endif
+}
+
+simdutf_warn_unused size_t convert_utf16le_to_utf8_with_replacement(
+    const char16_t *input, size_t length, char *utf8_buffer) noexcept {
+  return get_default_implementation()->convert_utf16le_to_utf8_with_replacement(
+      input, length, utf8_buffer);
+}
+
+simdutf_warn_unused size_t convert_utf16be_to_utf8_with_replacement(
+    const char16_t *input, size_t length, char *utf8_buffer) noexcept {
+  return get_default_implementation()->convert_utf16be_to_utf8_with_replacement(
+      input, length, utf8_buffer);
 }
 
 #endif // SIMDUTF_FEATURE_UTF8 && SIMDUTF_FEATURE_UTF16

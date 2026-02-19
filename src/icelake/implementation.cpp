@@ -1607,7 +1607,7 @@ simdutf_warn_unused size_t implementation::utf16_length_from_utf8(
       /* 0110 */ 1,
       /* 0111 */ 1,
 
-      // continutation bytes
+      // continuation bytes
       /* 1000 */ 0,
       /* 1001 */ 0,
       /* 1010 */ 0,
@@ -1678,6 +1678,20 @@ implementation::utf8_length_from_utf16be_with_replacement(
     const char16_t *input, size_t length) const noexcept {
   return icelake_utf8_length_from_utf16_with_replacement<endianness::BIG>(
       input, length);
+}
+
+simdutf_warn_unused size_t
+implementation::convert_utf16le_to_utf8_with_replacement(
+    const char16_t *input, size_t length, char *utf8_buffer) const noexcept {
+  return scalar::utf16_to_utf8::convert_with_replacement<endianness::LITTLE>(
+      input, length, utf8_buffer);
+}
+
+simdutf_warn_unused size_t
+implementation::convert_utf16be_to_utf8_with_replacement(
+    const char16_t *input, size_t length, char *utf8_buffer) const noexcept {
+  return scalar::utf16_to_utf8::convert_with_replacement<endianness::BIG>(
+      input, length, utf8_buffer);
 }
 
 #endif // SIMDUTF_FEATURE_UTF8 && SIMDUTF_FEATURE_UTF16
