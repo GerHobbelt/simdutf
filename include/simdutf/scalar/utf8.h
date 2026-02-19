@@ -5,11 +5,14 @@ namespace simdutf {
 namespace scalar {
 namespace {
 namespace utf8 {
-#if SIMDUTF_IMPLEMENTATION_FALLBACK || SIMDUTF_IMPLEMENTATION_RVV
-// only used by the fallback kernel.
+
 // credit: based on code from Google Fuchsia (Apache Licensed)
-inline simdutf_warn_unused bool validate(const char *buf, size_t len) noexcept {
-  const uint8_t *data = reinterpret_cast<const uint8_t *>(buf);
+template <class BytePtr>
+simdutf_constexpr23 simdutf_warn_unused bool validate(BytePtr data,
+                                                      size_t len) noexcept {
+  static_assert(
+      std::is_same<typename std::decay<decltype(*data)>::type, uint8_t>::value,
+      "dereferencing the data pointer must result in a uint8_t");
   uint64_t pos = 0;
   uint32_t code_point = 0;
   while (pos < len) {
@@ -17,9 +20,9 @@ inline simdutf_warn_unused bool validate(const char *buf, size_t len) noexcept {
     uint64_t next_pos = pos + 16;
     if (next_pos <=
         len) { // if it is safe to read 16 more bytes, check that they are ascii
-      uint64_t v1;
+      uint64_t v1{};
       std::memcpy(&v1, data + pos, sizeof(uint64_t));
-      uint64_t v2;
+      uint64_t v2{};
       std::memcpy(&v2, data + pos + sizeof(uint64_t), sizeof(uint64_t));
       uint64_t v{v1 | v2};
       if ((v & 0x8080808080808080) == 0) {
@@ -97,11 +100,18 @@ inline simdutf_warn_unused bool validate(const char *buf, size_t len) noexcept {
   }
   return true;
 }
-#endif
 
-inline simdutf_warn_unused result validate_with_errors(const char *buf,
-                                                       size_t len) noexcept {
-  const uint8_t *data = reinterpret_cast<const uint8_t *>(buf);
+simdutf_really_inline simdutf_warn_unused bool validate(const char *buf,
+                                                        size_t len) noexcept {
+  return validate(reinterpret_cast<const uint8_t *>(buf), len);
+}
+
+template <class BytePtr>
+simdutf_constexpr23 simdutf_warn_unused result
+validate_with_errors(BytePtr data, size_t len) noexcept {
+  static_assert(
+      std::is_same<typename std::decay<decltype(*data)>::type, uint8_t>::value,
+      "dereferencing the data pointer must result in a uint8_t");
   size_t pos = 0;
   uint32_t code_point = 0;
   while (pos < len) {
@@ -197,6 +207,11 @@ inline simdutf_warn_unused result validate_with_errors(const char *buf,
     pos = next_pos;
   }
   return result(error_code::SUCCESS, len);
+}
+
+simdutf_really_inline simdutf_warn_unused result
+validate_with_errors(const char *buf, size_t len) noexcept {
+  return validate_with_errors(reinterpret_cast<const uint8_t *>(buf), len);
 }
 
 // Finds the previous leading byte starting backward from buf and validates with

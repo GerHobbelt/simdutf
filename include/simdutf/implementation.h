@@ -39,13 +39,13 @@
 #define SIMDUTF_FEATURE_UTF32 1
 #define SIMDUTF_FEATURE_BASE64 1
 
-namespace simdutf {
-
-constexpr size_t default_line_length =
-    76; ///< default line length for base64 encoding with lines
+#if SIMDUTF_CPLUSPLUS23
+  #include <simdutf/constexpr_ptr.h>
+#endif
 
 #if SIMDUTF_SPAN
 /// helpers placed in namespace detail are not a part of the public API
+namespace simdutf {
 namespace detail {
 /**
  * matches a byte, in the many ways C++ allows. note that these
@@ -89,8 +89,68 @@ concept output_span_of_byte_like = requires(T &t) {
   { *t.data() } noexcept -> is_byte_like;
   { *t.data() } noexcept -> is_mutable;
 };
+
+/**
+ * a pointer like object, when indexed, results in a byte like result.
+ * valid examples: char*, const char*, std::array<char,10>
+ * invalid examples: int*, std::array<int,10>
+ */
+template <class InputPtr>
+concept indexes_into_byte_like = requires(InputPtr p) {
+  { std::decay_t<decltype(p[0])>{} } -> simdutf::detail::byte_like;
+};
+template <class InputPtr>
+concept index_assignable_from_char = requires(InputPtr p, char s) {
+  { p[0] = s };
+};
+
+/**
+ * a pointer like object that results in a uint32_t when indexed.
+ * valid examples: uint32_t*
+ */
+template <class InputPtr>
+concept indexes_into_uint32 = requires(InputPtr p) {
+  { std::decay_t<decltype(p[0])>{} } -> std::same_as<std::uint32_t>;
+};
 } // namespace detail
-#endif
+} // namespace simdutf
+#endif // SIMDUTF_SPAN
+
+// these includes are needed for constexpr support. they are
+// not part of the public api.
+#include <simdutf/scalar/swap_bytes.h>
+#include <simdutf/scalar/ascii.h>
+#include <simdutf/scalar/atomic_util.h>
+#include <simdutf/scalar/latin1.h>
+#include <simdutf/scalar/latin1_to_utf16/latin1_to_utf16.h>
+#include <simdutf/scalar/latin1_to_utf32/latin1_to_utf32.h>
+#include <simdutf/scalar/latin1_to_utf8/latin1_to_utf8.h>
+#include <simdutf/scalar/utf16.h>
+#include <simdutf/scalar/utf16_to_latin1/utf16_to_latin1.h>
+#include <simdutf/scalar/utf16_to_latin1/valid_utf16_to_latin1.h>
+#include <simdutf/scalar/utf16_to_utf32/utf16_to_utf32.h>
+#include <simdutf/scalar/utf16_to_utf32/valid_utf16_to_utf32.h>
+#include <simdutf/scalar/utf16_to_utf8/utf16_to_utf8.h>
+#include <simdutf/scalar/utf16_to_utf8/valid_utf16_to_utf8.h>
+#include <simdutf/scalar/utf32.h>
+#include <simdutf/scalar/utf32_to_latin1/utf32_to_latin1.h>
+#include <simdutf/scalar/utf32_to_latin1/valid_utf32_to_latin1.h>
+#include <simdutf/scalar/utf32_to_utf16/utf32_to_utf16.h>
+#include <simdutf/scalar/utf32_to_utf16/valid_utf32_to_utf16.h>
+#include <simdutf/scalar/utf32_to_utf8/utf32_to_utf8.h>
+#include <simdutf/scalar/utf32_to_utf8/valid_utf32_to_utf8.h>
+#include <simdutf/scalar/utf8.h>
+#include <simdutf/scalar/utf8_to_latin1/utf8_to_latin1.h>
+#include <simdutf/scalar/utf8_to_latin1/valid_utf8_to_latin1.h>
+#include <simdutf/scalar/utf8_to_utf16/utf8_to_utf16.h>
+#include <simdutf/scalar/utf8_to_utf16/valid_utf8_to_utf16.h>
+#include <simdutf/scalar/utf8_to_utf32/utf8_to_utf32.h>
+#include <simdutf/scalar/utf8_to_utf32/valid_utf8_to_utf32.h>
+
+namespace simdutf {
+
+constexpr size_t default_line_length =
+    76; ///< default line length for base64 encoding with lines
 
 #if SIMDUTF_FEATURE_DETECT_ENCODING
 /**
@@ -169,10 +229,18 @@ detect_encodings(const detail::input_span_of_byte_like auto &input) noexcept {
  */
 simdutf_warn_unused bool validate_utf8(const char *buf, size_t len) noexcept;
   #if SIMDUTF_SPAN
-simdutf_really_inline simdutf_warn_unused bool
+simdutf_constexpr23 simdutf_really_inline simdutf_warn_unused bool
 validate_utf8(const detail::input_span_of_byte_like auto &input) noexcept {
-  return validate_utf8(reinterpret_cast<const char *>(input.data()),
-                       input.size());
+    #if SIMDUTF_CPLUSPLUS23
+  if consteval {
+    return scalar::utf8::validate(
+        detail::constexpr_cast_ptr<uint8_t>(input.data()), input.size());
+  } else
+    #endif
+  {
+    return validate_utf8(reinterpret_cast<const char *>(input.data()),
+                         input.size());
+  }
 }
   #endif // SIMDUTF_SPAN
 #endif   // SIMDUTF_FEATURE_UTF8 || SIMDUTF_FEATURE_DETECT_ENCODING
@@ -193,10 +261,19 @@ validate_utf8(const detail::input_span_of_byte_like auto &input) noexcept {
 simdutf_warn_unused result validate_utf8_with_errors(const char *buf,
                                                      size_t len) noexcept;
   #if SIMDUTF_SPAN
-simdutf_really_inline simdutf_warn_unused result validate_utf8_with_errors(
+simdutf_really_inline simdutf_constexpr23 simdutf_warn_unused result
+validate_utf8_with_errors(
     const detail::input_span_of_byte_like auto &input) noexcept {
-  return validate_utf8_with_errors(reinterpret_cast<const char *>(input.data()),
-                                   input.size());
+    #if SIMDUTF_CPLUSPLUS23
+  if consteval {
+    return scalar::utf8::validate_with_errors(
+        detail::constexpr_cast_ptr<uint8_t>(input.data()), input.size());
+  } else
+    #endif
+  {
+    return validate_utf8_with_errors(
+        reinterpret_cast<const char *>(input.data()), input.size());
+  }
 }
   #endif // SIMDUTF_SPAN
 #endif   // SIMDUTF_FEATURE_UTF8
@@ -213,10 +290,18 @@ simdutf_really_inline simdutf_warn_unused result validate_utf8_with_errors(
  */
 simdutf_warn_unused bool validate_ascii(const char *buf, size_t len) noexcept;
   #if SIMDUTF_SPAN
-simdutf_really_inline simdutf_warn_unused bool
+simdutf_really_inline simdutf_warn_unused simdutf_constexpr23 bool
 validate_ascii(const detail::input_span_of_byte_like auto &input) noexcept {
-  return validate_ascii(reinterpret_cast<const char *>(input.data()),
-                        input.size());
+    #if SIMDUTF_CPLUSPLUS23
+  if consteval {
+    return scalar::ascii::validate(
+        detail::constexpr_cast_ptr<std::uint8_t>(input.data()), input.size());
+  } else
+    #endif
+  {
+    return validate_ascii(reinterpret_cast<const char *>(input.data()),
+                          input.size());
+  }
 }
   #endif // SIMDUTF_SPAN
 
@@ -236,10 +321,19 @@ validate_ascii(const detail::input_span_of_byte_like auto &input) noexcept {
 simdutf_warn_unused result validate_ascii_with_errors(const char *buf,
                                                       size_t len) noexcept;
   #if SIMDUTF_SPAN
-simdutf_really_inline simdutf_warn_unused result validate_ascii_with_errors(
+simdutf_really_inline simdutf_warn_unused simdutf_constexpr23 result
+validate_ascii_with_errors(
     const detail::input_span_of_byte_like auto &input) noexcept {
-  return validate_ascii_with_errors(
-      reinterpret_cast<const char *>(input.data()), input.size());
+    #if SIMDUTF_CPLUSPLUS23
+  if consteval {
+    return scalar::ascii::validate_with_errors(
+        detail::constexpr_cast_ptr<std::uint8_t>(input.data()), input.size());
+  } else
+    #endif
+  {
+    return validate_ascii_with_errors(
+        reinterpret_cast<const char *>(input.data()), input.size());
+  }
 }
   #endif // SIMDUTF_SPAN
 #endif   // SIMDUTF_FEATURE_ASCII
@@ -259,9 +353,17 @@ simdutf_really_inline simdutf_warn_unused result validate_ascii_with_errors(
 simdutf_warn_unused bool validate_utf16_as_ascii(const char16_t *buf,
                                                  size_t len) noexcept;
   #if SIMDUTF_SPAN
-simdutf_really_inline simdutf_warn_unused bool
+simdutf_really_inline simdutf_warn_unused simdutf_constexpr23 bool
 validate_utf16_as_ascii(std::span<const char16_t> input) noexcept {
-  return validate_utf16_as_ascii(input.data(), input.size());
+    #if SIMDUTF_CPLUSPLUS23
+  if consteval {
+    return scalar::utf16::validate_as_ascii<endianness::NATIVE>(input.data(),
+                                                                input.size());
+  } else
+    #endif
+  {
+    return validate_utf16_as_ascii(input.data(), input.size());
+  }
 }
   #endif // SIMDUTF_SPAN
 
@@ -279,9 +381,17 @@ validate_utf16_as_ascii(std::span<const char16_t> input) noexcept {
 simdutf_warn_unused bool validate_utf16be_as_ascii(const char16_t *buf,
                                                    size_t len) noexcept;
   #if SIMDUTF_SPAN
-simdutf_really_inline simdutf_warn_unused bool
+simdutf_really_inline simdutf_warn_unused simdutf_constexpr23 bool
 validate_utf16be_as_ascii(std::span<const char16_t> input) noexcept {
-  return validate_utf16be_as_ascii(input.data(), input.size());
+    #if SIMDUTF_CPLUSPLUS23
+  if consteval {
+    return scalar::utf16::validate_as_ascii<endianness::BIG>(input.data(),
+                                                             input.size());
+  } else
+    #endif
+  {
+    return validate_utf16be_as_ascii(input.data(), input.size());
+  }
 }
   #endif // SIMDUTF_SPAN
 
@@ -299,9 +409,17 @@ validate_utf16be_as_ascii(std::span<const char16_t> input) noexcept {
 simdutf_warn_unused bool validate_utf16le_as_ascii(const char16_t *buf,
                                                    size_t len) noexcept;
   #if SIMDUTF_SPAN
-simdutf_really_inline simdutf_warn_unused bool
+simdutf_really_inline simdutf_warn_unused simdutf_constexpr23 bool
 validate_utf16le_as_ascii(std::span<const char16_t> input) noexcept {
-  return validate_utf16le_as_ascii(input.data(), input.size());
+    #if SIMDUTF_CPLUSPLUS23
+  if consteval {
+    return scalar::utf16::validate_as_ascii<endianness::LITTLE>(input.data(),
+                                                                input.size());
+  } else
+    #endif
+  {
+    return validate_utf16le_as_ascii(input.data(), input.size());
+  }
 }
   #endif // SIMDUTF_SPAN
 #endif   // SIMDUTF_FEATURE_UTF16 && SIMDUTF_FEATURE_ASCII
@@ -324,9 +442,17 @@ validate_utf16le_as_ascii(std::span<const char16_t> input) noexcept {
 simdutf_warn_unused bool validate_utf16(const char16_t *buf,
                                         size_t len) noexcept;
   #if SIMDUTF_SPAN
-simdutf_really_inline simdutf_warn_unused bool
+simdutf_really_inline simdutf_warn_unused simdutf_constexpr23 bool
 validate_utf16(std::span<const char16_t> input) noexcept {
-  return validate_utf16(input.data(), input.size());
+    #if SIMDUTF_CPLUSPLUS23
+  if consteval {
+    return scalar::utf16::validate<endianness::NATIVE>(input.data(),
+                                                       input.size());
+  } else
+    #endif
+  {
+    return validate_utf16(input.data(), input.size());
+  }
 }
   #endif // SIMDUTF_SPAN
 #endif   // SIMDUTF_FEATURE_UTF16
@@ -349,9 +475,17 @@ validate_utf16(std::span<const char16_t> input) noexcept {
 simdutf_warn_unused bool validate_utf16le(const char16_t *buf,
                                           size_t len) noexcept;
   #if SIMDUTF_SPAN
-simdutf_really_inline simdutf_warn_unused bool
+simdutf_really_inline simdutf_constexpr23 simdutf_warn_unused bool
 validate_utf16le(std::span<const char16_t> input) noexcept {
-  return validate_utf16le(input.data(), input.size());
+    #if SIMDUTF_CPLUSPLUS23
+  if consteval {
+    return scalar::utf16::validate<endianness::LITTLE>(input.data(),
+                                                       input.size());
+  } else
+    #endif
+  {
+    return validate_utf16le(input.data(), input.size());
+  }
 }
   #endif // SIMDUTF_SPAN
 #endif   // SIMDUTF_FEATURE_UTF16 || SIMDUTF_FEATURE_DETECT_ENCODING
@@ -374,9 +508,16 @@ validate_utf16le(std::span<const char16_t> input) noexcept {
 simdutf_warn_unused bool validate_utf16be(const char16_t *buf,
                                           size_t len) noexcept;
   #if SIMDUTF_SPAN
-simdutf_really_inline simdutf_warn_unused bool
+simdutf_really_inline simdutf_warn_unused simdutf_constexpr23 bool
 validate_utf16be(std::span<const char16_t> input) noexcept {
-  return validate_utf16be(input.data(), input.size());
+    #if SIMDUTF_CPLUSPLUS23
+  if consteval {
+    return scalar::utf16::validate<endianness::BIG>(input.data(), input.size());
+  } else
+    #endif
+  {
+    return validate_utf16be(input.data(), input.size());
+  }
 }
   #endif // SIMDUTF_SPAN
 
@@ -400,9 +541,17 @@ validate_utf16be(std::span<const char16_t> input) noexcept {
 simdutf_warn_unused result validate_utf16_with_errors(const char16_t *buf,
                                                       size_t len) noexcept;
   #if SIMDUTF_SPAN
-simdutf_really_inline simdutf_warn_unused result
+simdutf_really_inline simdutf_warn_unused simdutf_constexpr23 result
 validate_utf16_with_errors(std::span<const char16_t> input) noexcept {
-  return validate_utf16_with_errors(input.data(), input.size());
+    #if SIMDUTF_CPLUSPLUS23
+  if consteval {
+    return scalar::utf16::validate_with_errors<endianness::NATIVE>(
+        input.data(), input.size());
+  } else
+    #endif
+  {
+    return validate_utf16_with_errors(input.data(), input.size());
+  }
 }
   #endif // SIMDUTF_SPAN
 
@@ -425,9 +574,17 @@ validate_utf16_with_errors(std::span<const char16_t> input) noexcept {
 simdutf_warn_unused result validate_utf16le_with_errors(const char16_t *buf,
                                                         size_t len) noexcept;
   #if SIMDUTF_SPAN
-simdutf_really_inline simdutf_warn_unused result
+simdutf_really_inline simdutf_warn_unused simdutf_constexpr23 result
 validate_utf16le_with_errors(std::span<const char16_t> input) noexcept {
-  return validate_utf16le_with_errors(input.data(), input.size());
+    #if SIMDUTF_CPLUSPLUS23
+  if consteval {
+    return scalar::utf16::validate_with_errors<endianness::LITTLE>(
+        input.data(), input.size());
+  } else
+    #endif
+  {
+    return validate_utf16le_with_errors(input.data(), input.size());
+  }
 }
   #endif // SIMDUTF_SPAN
 
@@ -450,9 +607,17 @@ validate_utf16le_with_errors(std::span<const char16_t> input) noexcept {
 simdutf_warn_unused result validate_utf16be_with_errors(const char16_t *buf,
                                                         size_t len) noexcept;
   #if SIMDUTF_SPAN
-simdutf_really_inline simdutf_warn_unused result
+simdutf_really_inline simdutf_warn_unused simdutf_constexpr23 result
 validate_utf16be_with_errors(std::span<const char16_t> input) noexcept {
-  return validate_utf16be_with_errors(input.data(), input.size());
+    #if SIMDUTF_CPLUSPLUS23
+  if consteval {
+    return scalar::utf16::validate_with_errors<endianness::BIG>(input.data(),
+                                                                input.size());
+  } else
+    #endif
+  {
+    return validate_utf16be_with_errors(input.data(), input.size());
+  }
 }
   #endif // SIMDUTF_SPAN
 
@@ -471,10 +636,18 @@ validate_utf16be_with_errors(std::span<const char16_t> input) noexcept {
 void to_well_formed_utf16le(const char16_t *input, size_t len,
                             char16_t *output) noexcept;
   #if SIMDUTF_SPAN
-simdutf_really_inline void
+simdutf_really_inline simdutf_constexpr23 void
 to_well_formed_utf16le(std::span<const char16_t> input,
                        std::span<char16_t> output) noexcept {
-  to_well_formed_utf16le(input.data(), input.size(), output.data());
+    #if SIMDUTF_CPLUSPLUS23
+  if consteval {
+    scalar::utf16::to_well_formed_utf16<endianness::LITTLE>(
+        input.data(), input.size(), output.data());
+  } else
+    #endif
+  {
+    to_well_formed_utf16le(input.data(), input.size(), output.data());
+  }
 }
   #endif // SIMDUTF_SPAN
 
@@ -493,10 +666,18 @@ to_well_formed_utf16le(std::span<const char16_t> input,
 void to_well_formed_utf16be(const char16_t *input, size_t len,
                             char16_t *output) noexcept;
   #if SIMDUTF_SPAN
-simdutf_really_inline void
+simdutf_really_inline simdutf_constexpr23 void
 to_well_formed_utf16be(std::span<const char16_t> input,
                        std::span<char16_t> output) noexcept {
-  to_well_formed_utf16be(input.data(), input.size(), output.data());
+    #if SIMDUTF_CPLUSPLUS23
+  if consteval {
+    scalar::utf16::to_well_formed_utf16<endianness::BIG>(
+        input.data(), input.size(), output.data());
+  } else
+    #endif
+  {
+    to_well_formed_utf16be(input.data(), input.size(), output.data());
+  }
 }
   #endif // SIMDUTF_SPAN
 
@@ -515,10 +696,18 @@ to_well_formed_utf16be(std::span<const char16_t> input,
 void to_well_formed_utf16(const char16_t *input, size_t len,
                           char16_t *output) noexcept;
   #if SIMDUTF_SPAN
-simdutf_really_inline void
+simdutf_really_inline simdutf_constexpr23 void
 to_well_formed_utf16(std::span<const char16_t> input,
                      std::span<char16_t> output) noexcept {
-  to_well_formed_utf16(input.data(), input.size(), output.data());
+    #if SIMDUTF_CPLUSPLUS23
+  if consteval {
+    scalar::utf16::to_well_formed_utf16<endianness::NATIVE>(
+        input.data(), input.size(), output.data());
+  } else
+    #endif
+  {
+    to_well_formed_utf16(input.data(), input.size(), output.data());
+  }
 }
   #endif // SIMDUTF_SPAN
 
@@ -542,9 +731,17 @@ to_well_formed_utf16(std::span<const char16_t> input,
 simdutf_warn_unused bool validate_utf32(const char32_t *buf,
                                         size_t len) noexcept;
   #if SIMDUTF_SPAN
-simdutf_really_inline simdutf_warn_unused bool
+simdutf_really_inline simdutf_warn_unused simdutf_constexpr23 bool
 validate_utf32(std::span<const char32_t> input) noexcept {
-  return validate_utf32(input.data(), input.size());
+    #if SIMDUTF_CPLUSPLUS23
+  if consteval {
+    return scalar::utf32::validate(
+        detail::constexpr_cast_ptr<std::uint32_t>(input.data()), input.size());
+  } else
+    #endif
+  {
+    return validate_utf32(input.data(), input.size());
+  }
 }
   #endif // SIMDUTF_SPAN
 #endif   // SIMDUTF_FEATURE_UTF32 || SIMDUTF_FEATURE_DETECT_ENCODING
@@ -569,9 +766,17 @@ validate_utf32(std::span<const char32_t> input) noexcept {
 simdutf_warn_unused result validate_utf32_with_errors(const char32_t *buf,
                                                       size_t len) noexcept;
   #if SIMDUTF_SPAN
-simdutf_really_inline simdutf_warn_unused result
+simdutf_really_inline simdutf_warn_unused simdutf_constexpr23 result
 validate_utf32_with_errors(std::span<const char32_t> input) noexcept {
-  return validate_utf32_with_errors(input.data(), input.size());
+    #if SIMDUTF_CPLUSPLUS23
+  if consteval {
+    return scalar::utf32::validate_with_errors(
+        detail::constexpr_cast_ptr<std::uint32_t>(input.data()), input.size());
+  } else
+    #endif
+  {
+    return validate_utf32_with_errors(input.data(), input.size());
+  }
 }
   #endif // SIMDUTF_SPAN
 #endif   // SIMDUTF_FEATURE_UTF32
@@ -591,12 +796,23 @@ simdutf_warn_unused size_t convert_latin1_to_utf8(const char *input,
                                                   size_t length,
                                                   char *utf8_output) noexcept;
   #if SIMDUTF_SPAN
-simdutf_really_inline simdutf_warn_unused size_t convert_latin1_to_utf8(
+simdutf_really_inline simdutf_warn_unused simdutf_constexpr23 size_t
+convert_latin1_to_utf8(
     const detail::input_span_of_byte_like auto &latin1_input,
     detail::output_span_of_byte_like auto &&utf8_output) noexcept {
-  return convert_latin1_to_utf8(
-      reinterpret_cast<const char *>(latin1_input.data()), latin1_input.size(),
-      utf8_output.data());
+    #if SIMDUTF_CPLUSPLUS23
+  if consteval {
+    return scalar::latin1_to_utf8::convert(
+        detail::constexpr_cast_ptr<char>(latin1_input.data()),
+        latin1_input.size(),
+        detail::constexpr_cast_writeptr<char>(utf8_output.data()));
+  } else
+    #endif
+  {
+    return convert_latin1_to_utf8(
+        reinterpret_cast<const char *>(latin1_input.data()),
+        latin1_input.size(), reinterpret_cast<char *>(utf8_output.data()));
+  }
 }
   #endif // SIMDUTF_SPAN
 
@@ -617,18 +833,27 @@ simdutf_warn_unused size_t
 convert_latin1_to_utf8_safe(const char *input, size_t length, char *utf8_output,
                             size_t utf8_len) noexcept;
   #if SIMDUTF_SPAN
-simdutf_really_inline simdutf_warn_unused size_t convert_latin1_to_utf8_safe(
+simdutf_really_inline simdutf_warn_unused simdutf_constexpr23 size_t
+convert_latin1_to_utf8_safe(
     const detail::input_span_of_byte_like auto &input,
     detail::output_span_of_byte_like auto &&utf8_output) noexcept {
-  // implementation note: outputspan is a forwarding ref to avoid copying and
-  // allow both lvalues and rvalues. std::span can be copied without problems,
-  // but std::vector should not, and this function should accept both. it will
-  // allow using an owning rvalue ref (example: passing a temporary std::string)
-  // as output, but the user will quickly find out that he has no way of getting
-  // the data out of the object in that case.
-  return convert_latin1_to_utf8_safe(
-      input.data(), input.size(), reinterpret_cast<char *>(utf8_output.data()),
-      utf8_output.size());
+      // implementation note: outputspan is a forwarding ref to avoid copying
+      // and allow both lvalues and rvalues. std::span can be copied without
+      // problems, but std::vector should not, and this function should accept
+      // both. it will allow using an owning rvalue ref (example: passing a
+      // temporary std::string) as output, but the user will quickly find out
+      // that he has no way of getting the data out of the object in that case.
+    #if SIMDUTF_CPLUSPLUS23
+  if consteval {
+    return scalar::latin1_to_utf8::convert_safe_constexpr(
+        input.data(), input.size(), utf8_output.data(), utf8_output.size());
+  } else
+    #endif
+  {
+    return convert_latin1_to_utf8_safe(
+        input.data(), input.size(),
+        reinterpret_cast<char *>(utf8_output.data()), utf8_output.size());
+  }
 }
   #endif // SIMDUTF_SPAN
 #endif   // SIMDUTF_FEATURE_UTF8 && SIMDUTF_FEATURE_LATIN1
@@ -793,11 +1018,19 @@ convert_utf8_to_utf16(const detail::input_span_of_byte_like auto &input,
 simdutf_warn_unused result utf8_length_from_utf16le_with_replacement(
     const char16_t *input, size_t length) noexcept;
   #if SIMDUTF_SPAN
-simdutf_really_inline simdutf_warn_unused result
+simdutf_really_inline simdutf_constexpr23 simdutf_warn_unused result
 utf8_length_from_utf16le_with_replacement(
     std::span<const char16_t> valid_utf16_input) noexcept {
-  return utf8_length_from_utf16le_with_replacement(valid_utf16_input.data(),
-                                                   valid_utf16_input.size());
+    #if SIMDUTF_CPLUSPLUS23
+  if consteval {
+    return scalar::utf16::utf8_length_from_utf16_with_replacement<
+        endianness::LITTLE>(valid_utf16_input.data(), valid_utf16_input.size());
+  } else
+    #endif
+  {
+    return utf8_length_from_utf16le_with_replacement(valid_utf16_input.data(),
+                                                     valid_utf16_input.size());
+  }
 }
   #endif // SIMDUTF_SPAN
 
@@ -821,11 +1054,19 @@ utf8_length_from_utf16le_with_replacement(
 simdutf_warn_unused result utf8_length_from_utf16be_with_replacement(
     const char16_t *input, size_t length) noexcept;
   #if SIMDUTF_SPAN
-simdutf_really_inline simdutf_warn_unused result
+simdutf_really_inline simdutf_warn_unused simdutf_constexpr23 result
 utf8_length_from_utf16be_with_replacement(
     std::span<const char16_t> valid_utf16_input) noexcept {
-  return utf8_length_from_utf16be_with_replacement(valid_utf16_input.data(),
-                                                   valid_utf16_input.size());
+    #if SIMDUTF_CPLUSPLUS23
+  if consteval {
+    return scalar::utf16::utf8_length_from_utf16_with_replacement<
+        endianness::BIG>(valid_utf16_input.data(), valid_utf16_input.size());
+  } else
+    #endif
+  {
+    return utf8_length_from_utf16be_with_replacement(valid_utf16_input.data(),
+                                                     valid_utf16_input.size());
+  }
 }
   #endif // SIMDUTF_SPAN
 
@@ -1207,10 +1448,20 @@ simdutf_really_inline simdutf_warn_unused size_t convert_valid_utf8_to_utf32(
 simdutf_warn_unused size_t utf8_length_from_latin1(const char *input,
                                                    size_t length) noexcept;
   #if SIMDUTF_SPAN
-simdutf_really_inline simdutf_warn_unused size_t utf8_length_from_latin1(
+simdutf_really_inline simdutf_warn_unused simdutf_constexpr23 size_t
+utf8_length_from_latin1(
     const detail::input_span_of_byte_like auto &latin1_input) noexcept {
-  return utf8_length_from_latin1(
-      reinterpret_cast<const char *>(latin1_input.data()), latin1_input.size());
+    #if SIMDUTF_CPLUSPLUS23
+  if consteval {
+    return scalar::latin1_to_utf8::utf8_length_from_latin1(latin1_input.data(),
+                                                           latin1_input.size());
+  } else
+    #endif
+  {
+    return utf8_length_from_latin1(
+        reinterpret_cast<const char *>(latin1_input.data()),
+        latin1_input.size());
+  }
 }
   #endif // SIMDUTF_SPAN
 
@@ -1757,13 +2008,23 @@ simdutf_really_inline simdutf_warn_unused size_t convert_valid_utf16_to_latin1(
 simdutf_warn_unused size_t convert_valid_utf16le_to_latin1(
     const char16_t *input, size_t length, char *latin1_buffer) noexcept;
   #if SIMDUTF_SPAN
-simdutf_really_inline simdutf_warn_unused size_t
+simdutf_really_inline simdutf_constexpr23 simdutf_warn_unused size_t
 convert_valid_utf16le_to_latin1(
     std::span<const char16_t> valid_utf16_input,
     detail::output_span_of_byte_like auto &&latin1_output) noexcept {
-  return convert_valid_utf16le_to_latin1(
-      valid_utf16_input.data(), valid_utf16_input.size(),
-      reinterpret_cast<char *>(latin1_output.data()));
+    #if SIMDUTF_CPLUSPLUS23
+  if consteval {
+    return scalar::utf16_to_latin1::convert_valid_impl<endianness::LITTLE>(
+        detail::constexpr_cast_ptr<uint16_t>(valid_utf16_input.data()),
+        valid_utf16_input.size(),
+        detail::constexpr_cast_writeptr<char>(latin1_output.data()));
+  } else
+    #endif
+  {
+    return convert_valid_utf16le_to_latin1(
+        valid_utf16_input.data(), valid_utf16_input.size(),
+        reinterpret_cast<char *>(latin1_output.data()));
+  }
 }
   #endif // SIMDUTF_SPAN
 
@@ -1789,13 +2050,23 @@ convert_valid_utf16le_to_latin1(
 simdutf_warn_unused size_t convert_valid_utf16be_to_latin1(
     const char16_t *input, size_t length, char *latin1_buffer) noexcept;
   #if SIMDUTF_SPAN
-simdutf_really_inline simdutf_warn_unused size_t
+simdutf_really_inline simdutf_constexpr23 simdutf_warn_unused size_t
 convert_valid_utf16be_to_latin1(
     std::span<const char16_t> valid_utf16_input,
     detail::output_span_of_byte_like auto &&latin1_output) noexcept {
-  return convert_valid_utf16be_to_latin1(
-      valid_utf16_input.data(), valid_utf16_input.size(),
-      reinterpret_cast<char *>(latin1_output.data()));
+    #if SIMDUTF_CPLUSPLUS23
+  if consteval {
+    return scalar::utf16_to_latin1::convert_valid_impl<endianness::BIG>(
+        detail::constexpr_cast_ptr<uint16_t>(valid_utf16_input.data()),
+        valid_utf16_input.size(),
+        detail::constexpr_cast_writeptr<char>(latin1_output.data()));
+  } else
+    #endif
+  {
+    return convert_valid_utf16be_to_latin1(
+        valid_utf16_input.data(), valid_utf16_input.size(),
+        reinterpret_cast<char *>(latin1_output.data()));
+  }
 }
   #endif // SIMDUTF_SPAN
 #endif   // SIMDUTF_FEATURE_UTF16 && SIMDUTF_FEATURE_LATIN1
@@ -2120,10 +2391,18 @@ simdutf_warn_unused size_t latin1_length_from_utf16(size_t length) noexcept;
 simdutf_warn_unused size_t utf8_length_from_utf16(const char16_t *input,
                                                   size_t length) noexcept;
   #if SIMDUTF_SPAN
-simdutf_really_inline simdutf_warn_unused size_t
+simdutf_really_inline simdutf_warn_unused simdutf_constexpr23 size_t
 utf8_length_from_utf16(std::span<const char16_t> valid_utf16_input) noexcept {
-  return utf8_length_from_utf16(valid_utf16_input.data(),
-                                valid_utf16_input.size());
+    #if SIMDUTF_CPLUSPLUS23
+  if consteval {
+    return scalar::utf16::utf8_length_from_utf16<endianness::NATIVE>(
+        valid_utf16_input.data(), valid_utf16_input.size());
+  } else
+    #endif
+  {
+    return utf8_length_from_utf16(valid_utf16_input.data(),
+                                  valid_utf16_input.size());
+  }
 }
   #endif // SIMDUTF_SPAN
 
@@ -2148,11 +2427,19 @@ utf8_length_from_utf16(std::span<const char16_t> valid_utf16_input) noexcept {
 simdutf_warn_unused result utf8_length_from_utf16_with_replacement(
     const char16_t *input, size_t length) noexcept;
   #if SIMDUTF_SPAN
-simdutf_really_inline simdutf_warn_unused result
+simdutf_really_inline simdutf_warn_unused simdutf_constexpr23 result
 utf8_length_from_utf16_with_replacement(
     std::span<const char16_t> valid_utf16_input) noexcept {
-  return utf8_length_from_utf16_with_replacement(valid_utf16_input.data(),
-                                                 valid_utf16_input.size());
+    #if SIMDUTF_CPLUSPLUS23
+  if consteval {
+    return scalar::utf16::utf8_length_from_utf16_with_replacement<
+        endianness::NATIVE>(valid_utf16_input.data(), valid_utf16_input.size());
+  } else
+    #endif
+  {
+    return utf8_length_from_utf16_with_replacement(valid_utf16_input.data(),
+                                                   valid_utf16_input.size());
+  }
 }
   #endif // SIMDUTF_SPAN
 
@@ -2170,10 +2457,18 @@ utf8_length_from_utf16_with_replacement(
 simdutf_warn_unused size_t utf8_length_from_utf16le(const char16_t *input,
                                                     size_t length) noexcept;
   #if SIMDUTF_SPAN
-simdutf_really_inline simdutf_warn_unused size_t
+simdutf_really_inline simdutf_constexpr23 simdutf_warn_unused size_t
 utf8_length_from_utf16le(std::span<const char16_t> valid_utf16_input) noexcept {
-  return utf8_length_from_utf16le(valid_utf16_input.data(),
-                                  valid_utf16_input.size());
+    #if SIMDUTF_CPLUSPLUS23
+  if consteval {
+    return scalar::utf16::utf8_length_from_utf16<endianness::LITTLE>(
+        valid_utf16_input.data(), valid_utf16_input.size());
+  } else
+    #endif
+  {
+    return utf8_length_from_utf16le(valid_utf16_input.data(),
+                                    valid_utf16_input.size());
+  }
 }
   #endif // SIMDUTF_SPAN
 
@@ -2191,10 +2486,18 @@ utf8_length_from_utf16le(std::span<const char16_t> valid_utf16_input) noexcept {
 simdutf_warn_unused size_t utf8_length_from_utf16be(const char16_t *input,
                                                     size_t length) noexcept;
   #if SIMDUTF_SPAN
-simdutf_really_inline simdutf_warn_unused size_t
+simdutf_really_inline simdutf_warn_unused simdutf_constexpr23 size_t
 utf8_length_from_utf16be(std::span<const char16_t> valid_utf16_input) noexcept {
-  return utf8_length_from_utf16be(valid_utf16_input.data(),
-                                  valid_utf16_input.size());
+    #if SIMDUTF_CPLUSPLUS23
+  if consteval {
+    return scalar::utf16::utf8_length_from_utf16<endianness::BIG>(
+        valid_utf16_input.data(), valid_utf16_input.size());
+  } else
+    #endif
+  {
+    return utf8_length_from_utf16be(valid_utf16_input.data(),
+                                    valid_utf16_input.size());
+  }
 }
   #endif // SIMDUTF_SPAN
 #endif   // SIMDUTF_FEATURE_UTF8 && SIMDUTF_FEATURE_UTF16
@@ -2411,12 +2714,23 @@ convert_utf32_to_latin1_with_errors(
 simdutf_warn_unused size_t convert_valid_utf32_to_latin1(
     const char32_t *input, size_t length, char *latin1_buffer) noexcept;
   #if SIMDUTF_SPAN
-simdutf_really_inline simdutf_warn_unused size_t convert_valid_utf32_to_latin1(
+simdutf_really_inline simdutf_constexpr23 simdutf_warn_unused size_t
+convert_valid_utf32_to_latin1(
     std::span<const char32_t> valid_utf32_input,
     detail::output_span_of_byte_like auto &&latin1_output) noexcept {
-  return convert_valid_utf32_to_latin1(
-      valid_utf32_input.data(), valid_utf32_input.size(),
-      reinterpret_cast<char *>(latin1_output.data()));
+    #if SIMDUTF_CPLUSPLUS23
+  if consteval {
+    return scalar::utf32_to_latin1::convert_valid(
+        detail::constexpr_cast_ptr<uint32_t>(valid_utf32_input.data()),
+        valid_utf32_input.size(),
+        detail::constexpr_cast_writeptr<char>(latin1_output.data()));
+  }
+    #endif
+  {
+    return convert_valid_utf32_to_latin1(
+        valid_utf32_input.data(), valid_utf32_input.size(),
+        reinterpret_cast<char *>(latin1_output.data()));
+  }
 }
   #endif // SIMDUTF_SPAN
 
@@ -2644,11 +2958,19 @@ convert_valid_utf32_to_utf16be(std::span<const char32_t> valid_utf32_input,
 void change_endianness_utf16(const char16_t *input, size_t length,
                              char16_t *output) noexcept;
   #if SIMDUTF_SPAN
-simdutf_really_inline void
+simdutf_really_inline simdutf_constexpr23 void
 change_endianness_utf16(std::span<const char16_t> utf16_input,
                         std::span<char16_t> utf16_output) noexcept {
-  return change_endianness_utf16(utf16_input.data(), utf16_input.size(),
-                                 utf16_output.data());
+    #if SIMDUTF_CPLUSPLUS23
+  if consteval {
+    return scalar::utf16::change_endianness_utf16(
+        utf16_input.data(), utf16_input.size(), utf16_output.data());
+  } else
+    #endif
+  {
+    return change_endianness_utf16(utf16_input.data(), utf16_input.size(),
+                                   utf16_output.data());
+  }
 }
   #endif // SIMDUTF_SPAN
 #endif   // SIMDUTF_FEATURE_UTF16
@@ -3003,6 +3325,78 @@ enum base64_options : uint64_t {
              if any */
 };
 
+// last_chunk_handling_options are used to specify the handling of the last
+// chunk in base64 decoding.
+// https://tc39.es/proposal-arraybuffer-base64/spec/#sec-frombase64
+enum last_chunk_handling_options : uint64_t {
+  loose = 0,  /* standard base64 format, decode partial final chunk */
+  strict = 1, /* error when the last chunk is partial, 2 or 3 chars, and
+                 unpadded, or non-zero bit padding */
+  stop_before_partial =
+      2, /* if the last chunk is partial, ignore it (no error) */
+  only_full_chunks =
+      3 /* only decode full blocks (4 base64 characters, no padding) */
+};
+
+inline simdutf_constexpr23 bool
+is_partial(last_chunk_handling_options options) {
+  return (options == stop_before_partial) || (options == only_full_chunks);
+}
+
+namespace detail {
+simdutf_warn_unused const char *find(const char *start, const char *end,
+                                     char character) noexcept;
+simdutf_warn_unused const char16_t *
+find(const char16_t *start, const char16_t *end, char16_t character) noexcept;
+} // namespace detail
+
+/**
+ * Find the first occurrence of a character in a string. If the character is
+ * not found, return a pointer to the end of the string.
+ * @param start        the start of the string
+ * @param end          the end of the string
+ * @param character    the character to find
+ * @return a pointer to the first occurrence of the character in the string,
+ * or a pointer to the end of the string if the character is not found.
+ *
+ */
+simdutf_warn_unused simdutf_really_inline simdutf_constexpr23 const char *
+find(const char *start, const char *end, char character) noexcept {
+  #if SIMDUTF_CPLUSPLUS23
+  if consteval {
+    for (; start != end; ++start)
+      if (*start == character)
+        return start;
+    return end;
+  } else
+  #endif
+  {
+    return detail::find(start, end, character);
+  }
+}
+simdutf_warn_unused simdutf_really_inline simdutf_constexpr23 const char16_t *
+find(const char16_t *start, const char16_t *end, char16_t character) noexcept {
+    // implementation note: this is repeated instead of a template, to ensure
+    // the api is still a function and compiles without concepts
+  #if SIMDUTF_CPLUSPLUS23
+  if consteval {
+    for (; start != end; ++start)
+      if (*start == character)
+        return start;
+    return end;
+  } else
+  #endif
+  {
+    return detail::find(start, end, character);
+  }
+}
+}
+  // We include base64_tables once.
+  #include <simdutf/base64_tables.h>
+  #include <simdutf/scalar/base64.h>
+
+namespace simdutf {
+
   #if SIMDUTF_CPLUSPLUS17
 inline std::string_view to_string(base64_options options) {
   switch (options) {
@@ -3026,23 +3420,6 @@ inline std::string_view to_string(base64_options options) {
   return "<unknown>";
 }
   #endif // SIMDUTF_CPLUSPLUS17
-
-// last_chunk_handling_options are used to specify the handling of the last
-// chunk in base64 decoding.
-// https://tc39.es/proposal-arraybuffer-base64/spec/#sec-frombase64
-enum last_chunk_handling_options : uint64_t {
-  loose = 0,  /* standard base64 format, decode partial final chunk */
-  strict = 1, /* error when the last chunk is partial, 2 or 3 chars, and
-                 unpadded, or non-zero bit padding */
-  stop_before_partial =
-      2, /* if the last chunk is partial, ignore it (no error) */
-  only_full_chunks =
-      3 /* only decode full blocks (4 base64 characters, no padding) */
-};
-
-inline bool is_partial(last_chunk_handling_options options) {
-  return (options == stop_before_partial) || (options == only_full_chunks);
-}
 
   #if SIMDUTF_CPLUSPLUS17
 inline std::string_view to_string(last_chunk_handling_options options) {
@@ -3076,11 +3453,19 @@ inline std::string_view to_string(last_chunk_handling_options options) {
 simdutf_warn_unused size_t
 maximal_binary_length_from_base64(const char *input, size_t length) noexcept;
   #if SIMDUTF_SPAN
-simdutf_really_inline simdutf_warn_unused size_t
+simdutf_really_inline simdutf_warn_unused simdutf_constexpr23 size_t
 maximal_binary_length_from_base64(
     const detail::input_span_of_byte_like auto &input) noexcept {
-  return maximal_binary_length_from_base64(
-      reinterpret_cast<const char *>(input.data()), input.size());
+    #if SIMDUTF_CPLUSPLUS23
+  if consteval {
+    return scalar::base64::maximal_binary_length_from_base64(
+        detail::constexpr_cast_ptr<uint8_t>(input.data()), input.size());
+  } else
+    #endif
+  {
+    return maximal_binary_length_from_base64(
+        reinterpret_cast<const char *>(input.data()), input.size());
+  }
 }
   #endif // SIMDUTF_SPAN
 
@@ -3101,9 +3486,17 @@ maximal_binary_length_from_base64(
 simdutf_warn_unused size_t maximal_binary_length_from_base64(
     const char16_t *input, size_t length) noexcept;
   #if SIMDUTF_SPAN
-simdutf_really_inline simdutf_warn_unused size_t
+simdutf_really_inline simdutf_warn_unused simdutf_constexpr23 size_t
 maximal_binary_length_from_base64(std::span<const char16_t> input) noexcept {
-  return maximal_binary_length_from_base64(input.data(), input.size());
+    #if SIMDUTF_CPLUSPLUS23
+  if consteval {
+    return scalar::base64::maximal_binary_length_from_base64(input.data(),
+                                                             input.size());
+  } else
+    #endif
+  {
+    return maximal_binary_length_from_base64(input.data(), input.size());
+  }
 }
   #endif // SIMDUTF_SPAN
 
@@ -3166,15 +3559,25 @@ simdutf_warn_unused result base64_to_binary(
     base64_options options = base64_default,
     last_chunk_handling_options last_chunk_options = loose) noexcept;
   #if SIMDUTF_SPAN
-simdutf_really_inline simdutf_warn_unused result base64_to_binary(
+simdutf_really_inline simdutf_warn_unused simdutf_constexpr23 result
+base64_to_binary(
     const detail::input_span_of_byte_like auto &input,
     detail::output_span_of_byte_like auto &&binary_output,
     base64_options options = base64_default,
     last_chunk_handling_options last_chunk_options = loose) noexcept {
-  return base64_to_binary(reinterpret_cast<const char *>(input.data()),
-                          input.size(),
-                          reinterpret_cast<char *>(binary_output.data()),
-                          options, last_chunk_options);
+    #if SIMDUTF_CPLUSPLUS23
+  if consteval {
+    return scalar::base64::base64_to_binary_details_impl(
+        input.data(), input.size(), binary_output.data(), options,
+        last_chunk_options);
+  } else
+    #endif
+  {
+    return base64_to_binary(reinterpret_cast<const char *>(input.data()),
+                            input.size(),
+                            reinterpret_cast<char *>(binary_output.data()),
+                            options, last_chunk_options);
+  }
 }
   #endif // SIMDUTF_SPAN
 
@@ -3184,8 +3587,10 @@ simdutf_really_inline simdutf_warn_unused result base64_to_binary(
  * @param length        the length of the input in bytes
  * @return number of base64 bytes
  */
-simdutf_warn_unused size_t base64_length_from_binary(
-    size_t length, base64_options options = base64_default) noexcept;
+inline simdutf_warn_unused simdutf_constexpr23 size_t base64_length_from_binary(
+    size_t length, base64_options options = base64_default) noexcept {
+  return scalar::base64::base64_length_from_binary(length, options);
+}
 
 /**
  * Provide the base64 length in bytes given the length of a binary input,
@@ -3196,9 +3601,13 @@ simdutf_warn_unused size_t base64_length_from_binary(
  * interpreted as 4),
  * @return number of base64 bytes
  */
-simdutf_warn_unused size_t base64_length_from_binary_with_lines(
+inline simdutf_warn_unused simdutf_constexpr23 size_t
+base64_length_from_binary_with_lines(
     size_t length, base64_options options = base64_default,
-    size_t line_length = default_line_length) noexcept;
+    size_t line_length = default_line_length) noexcept {
+  return scalar::base64::base64_length_from_binary_with_lines(length, options,
+                                                              line_length);
+}
 
 /**
  * Convert a binary input to a base64 output.
@@ -3224,13 +3633,21 @@ simdutf_warn_unused size_t base64_length_from_binary_with_lines(
 size_t binary_to_base64(const char *input, size_t length, char *output,
                         base64_options options = base64_default) noexcept;
   #if SIMDUTF_SPAN
-simdutf_really_inline simdutf_warn_unused size_t
+simdutf_really_inline simdutf_warn_unused simdutf_constexpr23 size_t
 binary_to_base64(const detail::input_span_of_byte_like auto &input,
                  detail::output_span_of_byte_like auto &&binary_output,
                  base64_options options = base64_default) noexcept {
-  return binary_to_base64(
-      reinterpret_cast<const char *>(input.data()), input.size(),
-      reinterpret_cast<char *>(binary_output.data()), options);
+    #if SIMDUTF_CPLUSPLUS23
+  if consteval {
+    return scalar::base64::tail_encode_base64(
+        binary_output.data(), input.data(), input.size(), options);
+  } else
+    #endif
+  {
+    return binary_to_base64(
+        reinterpret_cast<const char *>(input.data()), input.size(),
+        reinterpret_cast<char *>(binary_output.data()), options);
+  }
 }
   #endif // SIMDUTF_SPAN
 
@@ -3263,14 +3680,23 @@ binary_to_base64_with_lines(const char *input, size_t length, char *output,
                             size_t line_length = simdutf::default_line_length,
                             base64_options options = base64_default) noexcept;
   #if SIMDUTF_SPAN
-simdutf_really_inline simdutf_warn_unused size_t binary_to_base64_with_lines(
+simdutf_really_inline simdutf_warn_unused simdutf_constexpr23 size_t
+binary_to_base64_with_lines(
     const detail::input_span_of_byte_like auto &input,
     detail::output_span_of_byte_like auto &&binary_output,
     size_t line_length = simdutf::default_line_length,
     base64_options options = base64_default) noexcept {
-  return binary_to_base64_with_lines(
-      reinterpret_cast<const char *>(input.data()), input.size(),
-      reinterpret_cast<char *>(binary_output.data()), line_length, options);
+    #if SIMDUTF_CPLUSPLUS23
+  if consteval {
+    return scalar::base64::tail_encode_base64_impl<true>(
+        binary_output.data(), input.data(), input.size(), options, line_length);
+  } else
+    #endif
+  {
+    return binary_to_base64_with_lines(
+        reinterpret_cast<const char *>(input.data()), input.size(),
+        reinterpret_cast<char *>(binary_output.data()), line_length, options);
+  }
 }
   #endif // SIMDUTF_SPAN
 
@@ -3393,32 +3819,46 @@ base64_to_binary(const char16_t *input, size_t length, char *output,
                  last_chunk_handling_options last_chunk_options =
                      last_chunk_handling_options::loose) noexcept;
   #if SIMDUTF_SPAN
-simdutf_really_inline simdutf_warn_unused result base64_to_binary(
+simdutf_really_inline simdutf_warn_unused simdutf_constexpr23 result
+base64_to_binary(
     std::span<const char16_t> input,
     detail::output_span_of_byte_like auto &&binary_output,
     base64_options options = base64_default,
     last_chunk_handling_options last_chunk_options = loose) noexcept {
-  return base64_to_binary(input.data(), input.size(),
-                          reinterpret_cast<char *>(binary_output.data()),
-                          options, last_chunk_options);
+    #if SIMDUTF_CPLUSPLUS23
+  if consteval {
+    return scalar::base64::base64_to_binary_details_impl(
+        input.data(), input.size(), binary_output.data(), options,
+        last_chunk_options);
+  } else
+    #endif
+  {
+    return base64_to_binary(input.data(), input.size(),
+                            reinterpret_cast<char *>(binary_output.data()),
+                            options, last_chunk_options);
+  }
 }
   #endif // SIMDUTF_SPAN
 
 /**
- * Check if a character is an ignorabl base64 character.
+ * Check if a character is an ignorable base64 character.
  * Checking a large input, character by character, is not computationally
  * efficient.
  *
  * @param input         the character to check
  * @param options       the base64 options to use, is base64_default by default.
- * @return true if the character is an ignorablee base64 character, false
+ * @return true if the character is an ignorable base64 character, false
  * otherwise.
  */
-simdutf_warn_unused bool
-base64_ignorable(char input, base64_options options = base64_default) noexcept;
-simdutf_warn_unused bool
+simdutf_warn_unused simdutf_really_inline simdutf_constexpr23 bool
+base64_ignorable(char input, base64_options options = base64_default) noexcept {
+  return scalar::base64::is_ignorable(input, options);
+}
+simdutf_warn_unused simdutf_really_inline simdutf_constexpr23 bool
 base64_ignorable(char16_t input,
-                 base64_options options = base64_default) noexcept;
+                 base64_options options = base64_default) noexcept {
+  return scalar::base64::is_ignorable(input, options);
+}
 
 /**
  * Check if a character is a valid base64 character.
@@ -3431,10 +3871,14 @@ base64_ignorable(char16_t input,
  * @param options       the base64 options to use, is base64_default by default.
  * @return true if the character is a base64 character, false otherwise.
  */
-simdutf_warn_unused bool
-base64_valid(char input, base64_options options = base64_default) noexcept;
-simdutf_warn_unused bool
-base64_valid(char16_t input, base64_options options = base64_default) noexcept;
+simdutf_warn_unused simdutf_really_inline simdutf_constexpr23 bool
+base64_valid(char input, base64_options options = base64_default) noexcept {
+  return scalar::base64::is_base64(input, options);
+}
+simdutf_warn_unused simdutf_really_inline simdutf_constexpr23 bool
+base64_valid(char16_t input, base64_options options = base64_default) noexcept {
+  return scalar::base64::is_base64(input, options);
+}
 
 /**
  * Check if a character is a valid base64 character or the padding character
@@ -3445,12 +3889,16 @@ base64_valid(char16_t input, base64_options options = base64_default) noexcept;
  * @param options       the base64 options to use, is base64_default by default.
  * @return true if the character is a base64 character, false otherwise.
  */
-simdutf_warn_unused bool
+simdutf_warn_unused simdutf_really_inline simdutf_constexpr23 bool
 base64_valid_or_padding(char input,
-                        base64_options options = base64_default) noexcept;
-simdutf_warn_unused bool
+                        base64_options options = base64_default) noexcept {
+  return scalar::base64::is_base64_or_padding(input, options);
+}
+simdutf_warn_unused simdutf_really_inline simdutf_constexpr23 bool
 base64_valid_or_padding(char16_t input,
-                        base64_options options = base64_default) noexcept;
+                        base64_options options = base64_default) noexcept {
+  return scalar::base64::is_base64_or_padding(input, options);
+}
 
 /**
  * Convert a base64 input to a binary output.
@@ -3525,25 +3973,7 @@ base64_to_binary_safe(const char *input, size_t length, char *output,
                       last_chunk_handling_options last_chunk_options =
                           last_chunk_handling_options::loose,
                       bool decode_up_to_bad_char = false) noexcept;
-  #if SIMDUTF_SPAN
-/**
- * @brief span overload
- * @return a tuple of result and outlen
- */
-simdutf_really_inline simdutf_warn_unused std::tuple<result, std::size_t>
-base64_to_binary_safe(const detail::input_span_of_byte_like auto &input,
-                      detail::output_span_of_byte_like auto &&binary_output,
-                      base64_options options = base64_default,
-                      last_chunk_handling_options last_chunk_options = loose,
-                      bool decode_up_to_bad_char = false) noexcept {
-  size_t outlen = binary_output.size();
-  auto r = base64_to_binary_safe(
-      reinterpret_cast<const char *>(input.data()), input.size(),
-      reinterpret_cast<char *>(binary_output.data()), outlen, options,
-      last_chunk_options, decode_up_to_bad_char);
-  return {r, outlen};
-}
-  #endif // SIMDUTF_SPAN
+// the span overload has moved to the bottom of the file
 
 simdutf_warn_unused result
 base64_to_binary_safe(const char16_t *input, size_t length, char *output,
@@ -3551,25 +3981,7 @@ base64_to_binary_safe(const char16_t *input, size_t length, char *output,
                       last_chunk_handling_options last_chunk_options =
                           last_chunk_handling_options::loose,
                       bool decode_up_to_bad_char = false) noexcept;
-  #if SIMDUTF_SPAN
-/**
- * @brief span overload
- * @return a tuple of result and outlen
- */
-simdutf_really_inline simdutf_warn_unused std::tuple<result, std::size_t>
-base64_to_binary_safe(std::span<const char16_t> input,
-                      detail::output_span_of_byte_like auto &&binary_output,
-                      base64_options options = base64_default,
-                      last_chunk_handling_options last_chunk_options = loose,
-                      bool decode_up_to_bad_char = false) noexcept {
-  size_t outlen = binary_output.size();
-  auto r = base64_to_binary_safe(input.data(), input.size(),
-                                 reinterpret_cast<char *>(binary_output.data()),
-                                 outlen, options, last_chunk_options,
-                                 decode_up_to_bad_char);
-  return {r, outlen};
-}
-  #endif // SIMDUTF_SPAN
+  // span overload moved to bottom of file
 
   #if SIMDUTF_ATOMIC_REF
 /**
@@ -3663,20 +4075,6 @@ atomic_base64_to_binary_safe(
     #endif // SIMDUTF_SPAN
   #endif   // SIMDUTF_ATOMIC_REF
 
-/**
- * Find the first occurrence of a character in a string. If the character is
- * not found, return a pointer to the end of the string.
- * @param start        the start of the string
- * @param end          the end of the string
- * @param character    the character to find
- * @return a pointer to the first occurrence of the character in the string,
- * or a pointer to the end of the string if the character is not found.
- *
- */
-simdutf_warn_unused const char *find(const char *start, const char *end,
-                                     char character) noexcept;
-simdutf_warn_unused const char16_t *
-find(const char16_t *start, const char16_t *end, char16_t character) noexcept;
 #endif // SIMDUTF_FEATURE_BASE64
 
 /**
@@ -5372,6 +5770,7 @@ public:
       base64_options options = base64_default,
       last_chunk_handling_options last_chunk_options =
           last_chunk_handling_options::loose) const noexcept = 0;
+
   /**
    * Convert a base64 input to a binary output.
    *
@@ -5513,6 +5912,7 @@ public:
       const char *input, size_t length, char *output,
       size_t line_length = simdutf::default_line_length,
       base64_options options = base64_default) const noexcept = 0;
+
   /**
    * Find the first occurrence of a character in a string. If the character is
    * not found, return a pointer to the end of the string.
@@ -5693,5 +6093,86 @@ extern SIMDUTF_DLLIMPORTEXPORT internal::atomic_ptr<const implementation> &
 get_active_implementation();
 
 } // namespace simdutf
+
+#if SIMDUTF_FEATURE_BASE64
+  // this header is not part of the public api
+  #include <simdutf/base64_implementation.h>
+
+namespace simdutf {
+  #if SIMDUTF_SPAN
+/**
+ * @brief span overload
+ * @return a tuple of result and outlen
+ */
+simdutf_really_inline
+    simdutf_constexpr23 simdutf_warn_unused std::tuple<result, std::size_t>
+    base64_to_binary_safe(
+        const detail::input_span_of_byte_like auto &input,
+        detail::output_span_of_byte_like auto &&binary_output,
+        base64_options options = base64_default,
+        last_chunk_handling_options last_chunk_options = loose,
+        bool decode_up_to_bad_char = false) noexcept {
+  size_t outlen = binary_output.size();
+    #if SIMDUTF_CPLUSPLUS23
+  if consteval {
+    using CInput = std::decay_t<decltype(*input.data())>;
+    static_assert(std::is_same_v<CInput, char>,
+                  "sorry, the constexpr implementation is for now limited to "
+                  "input of type char");
+    using COutput = std::decay_t<decltype(*binary_output.data())>;
+    static_assert(std::is_same_v<COutput, char>,
+                  "sorry, the constexpr implementation is for now limited to "
+                  "output of type char");
+    auto r = base64_to_binary_safe_impl(
+        input.data(), input.size(), binary_output.data(), outlen, options,
+        last_chunk_options, decode_up_to_bad_char);
+    return {r, outlen};
+  } else
+    #endif
+  {
+    auto r = base64_to_binary_safe_impl<char>(
+        reinterpret_cast<const char *>(input.data()), input.size(),
+        reinterpret_cast<char *>(binary_output.data()), outlen, options,
+        last_chunk_options, decode_up_to_bad_char);
+    return {r, outlen};
+  }
+}
+
+    #if SIMDUTF_SPAN
+/**
+ * @brief span overload
+ * @return a tuple of result and outlen
+ */
+simdutf_really_inline
+    simdutf_warn_unused simdutf_constexpr23 std::tuple<result, std::size_t>
+    base64_to_binary_safe(
+        std::span<const char16_t> input,
+        detail::output_span_of_byte_like auto &&binary_output,
+        base64_options options = base64_default,
+        last_chunk_handling_options last_chunk_options = loose,
+        bool decode_up_to_bad_char = false) noexcept {
+  size_t outlen = binary_output.size();
+      #if SIMDUTF_CPLUSPLUS23
+  if consteval {
+    auto r = base64_to_binary_safe_impl(
+        input.data(), input.size(), binary_output.data(), outlen, options,
+        last_chunk_options, decode_up_to_bad_char);
+    return {r, outlen};
+  } else
+      #endif
+  {
+    auto r = base64_to_binary_safe(
+        input.data(), input.size(),
+        reinterpret_cast<char *>(binary_output.data()), outlen, options,
+        last_chunk_options, decode_up_to_bad_char);
+    return {r, outlen};
+  }
+}
+    #endif // SIMDUTF_SPAN
+
+  #endif // SIMDUTF_SPAN
+} // namespace simdutf
+
+#endif // SIMDUTF_FEATURE_BASE64
 
 #endif // SIMDUTF_IMPLEMENTATION_H

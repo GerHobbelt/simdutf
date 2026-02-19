@@ -18,15 +18,16 @@ template <class char_type> bool is_ascii_white_space(char_type c) {
   return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f';
 }
 
-template <class char_type> bool is_eight_byte(char_type c) {
-  if (sizeof(char_type) == 1) {
+template <class char_type> simdutf_constexpr23 bool is_eight_byte(char_type c) {
+  if simdutf_constexpr (sizeof(char_type) == 1) {
     return true;
   }
   return uint8_t(c) == c;
 }
 
 template <class char_type>
-bool is_ignorable(char_type c, simdutf::base64_options options) {
+simdutf_constexpr23 bool is_ignorable(char_type c,
+                                      simdutf::base64_options options) {
   const uint8_t *to_base64 =
       (options & base64_default_or_url)
           ? tables::base64::to_base64_default_or_url_value
@@ -46,7 +47,8 @@ bool is_ignorable(char_type c, simdutf::base64_options options) {
   return ignore_garbage;
 }
 template <class char_type>
-bool is_base64(char_type c, simdutf::base64_options options) {
+simdutf_constexpr23 bool is_base64(char_type c,
+                                   simdutf::base64_options options) {
   const uint8_t *to_base64 =
       (options & base64_default_or_url)
           ? tables::base64::to_base64_default_or_url_value
@@ -60,7 +62,8 @@ bool is_base64(char_type c, simdutf::base64_options options) {
 }
 
 template <class char_type>
-bool is_base64_or_padding(char_type c, simdutf::base64_options options) {
+simdutf_constexpr23 bool is_base64_or_padding(char_type c,
+                                              simdutf::base64_options options) {
   const uint8_t *to_base64 =
       (options & base64_default_or_url)
           ? tables::base64::to_base64_default_or_url_value
@@ -95,8 +98,8 @@ struct reduced_input {
 // and the length of the input buffer with padding. The input buffer is not
 // modified. The function assumes that there are at most two padding characters.
 template <class char_type>
-reduced_input find_end(const char_type *src, size_t srclen,
-                       simdutf::base64_options options) {
+simdutf_constexpr23 reduced_input find_end(const char_type *src, size_t srclen,
+                                           simdutf::base64_options options) {
   const uint8_t *to_base64 =
       (options & base64_default_or_url)
           ? tables::base64::to_base64_default_or_url_value
@@ -156,7 +159,7 @@ reduced_input find_end(const char_type *src, size_t srclen,
 // if check_capacity is true, it will check that the destination buffer is
 // large enough. If it is not, it will return OUTPUT_BUFFER_TOO_SMALL.
 template <bool check_capacity, class char_type>
-full_result base64_tail_decode_impl(
+simdutf_constexpr23 full_result base64_tail_decode_impl(
     char *dst, size_t outlen, const char_type *src, size_t length,
     size_t padding_characters, // number of padding characters
                                // '=', typically 0, 1, 2.
@@ -203,20 +206,18 @@ full_result base64_tail_decode_impl(
   size_t idx;
   uint8_t buffer[4];
   while (true) {
-    while (src + 4 <= srcend && is_eight_byte(src[0]) &&
+    while (srcend - src >= 4 && is_eight_byte(src[0]) &&
            is_eight_byte(src[1]) && is_eight_byte(src[2]) &&
            is_eight_byte(src[3]) &&
            (x = d0[uint8_t(src[0])] | d1[uint8_t(src[1])] |
                 d2[uint8_t(src[2])] | d3[uint8_t(src[3])]) < 0x01FFFFFF) {
-      if simdutf_constexpr (match_system(endianness::BIG)) {
-        x = scalar::u32_swap_bytes(x);
-      }
       if (check_capacity && dstend - dst < 3) {
         return {OUTPUT_BUFFER_TOO_SMALL, size_t(src - srcinit),
                 size_t(dst - dstinit)};
       }
-      std::memcpy(dst, &x, 3); // optimization opportunity: copy 4 bytes
-      dst += 3;
+      *dst++ = static_cast<char>(x & 0xFF);
+      *dst++ = static_cast<char>((x >> 8) & 0xFF);
+      *dst++ = static_cast<char>((x >> 16) & 0xFF);
       src += 4;
     }
     const char_type *srccur = src;
@@ -321,15 +322,7 @@ full_result base64_tail_decode_impl(
                 return {OUTPUT_BUFFER_TOO_SMALL, size_t(srccur - srcinit),
                         size_t(dst - dstinit)};
               }
-              if simdutf_constexpr (match_system(endianness::BIG)) {
-                triple <<= 8;
-                std::memcpy(dst, &triple, 1);
-              } else {
-                triple = scalar::u32_swap_bytes(triple);
-                triple >>= 8;
-                std::memcpy(dst, &triple, 1);
-              }
-              dst += 1;
+              *dst++ = static_cast<char>((triple >> 16) & 0xFF);
             } else if (idx == 3) {
               uint32_t triple = (uint32_t(buffer[0]) << 3 * 6) +
                                 (uint32_t(buffer[1]) << 2 * 6) +
@@ -344,15 +337,8 @@ full_result base64_tail_decode_impl(
                 return {OUTPUT_BUFFER_TOO_SMALL, size_t(srccur - srcinit),
                         size_t(dst - dstinit)};
               }
-              if simdutf_constexpr (match_system(endianness::BIG)) {
-                triple <<= 8;
-                std::memcpy(dst, &triple, 2);
-              } else {
-                triple = scalar::u32_swap_bytes(triple);
-                triple >>= 8;
-                std::memcpy(dst, &triple, 2);
-              }
-              dst += 2;
+              *dst++ = static_cast<char>((triple >> 16) & 0xFF);
+              *dst++ = static_cast<char>((triple >> 8) & 0xFF);
             } else if (!ignore_garbage && idx == 1 &&
                        (!is_partial(last_chunk_options) ||
                         (is_partial(last_chunk_options) &&
@@ -373,25 +359,18 @@ full_result base64_tail_decode_impl(
     uint32_t triple =
         (uint32_t(buffer[0]) << 3 * 6) + (uint32_t(buffer[1]) << 2 * 6) +
         (uint32_t(buffer[2]) << 1 * 6) + (uint32_t(buffer[3]) << 0 * 6);
-    if simdutf_constexpr (match_system(endianness::BIG)) {
-      triple <<= 8;
-      std::memcpy(dst, &triple, 3);
-    } else {
-      triple = scalar::u32_swap_bytes(triple);
-      triple >>= 8;
-      std::memcpy(dst, &triple, 3);
-    }
-    dst += 3;
+    *dst++ = static_cast<char>((triple >> 16) & 0xFF);
+    *dst++ = static_cast<char>((triple >> 8) & 0xFF);
+    *dst++ = static_cast<char>(triple & 0xFF);
   }
 }
 
 template <class char_type>
-full_result
-base64_tail_decode(char *dst, const char_type *src, size_t length,
-                   size_t padding_characters, // number of padding characters
-                                              // '=', typically 0, 1, 2.
-                   base64_options options,
-                   last_chunk_handling_options last_chunk_options) {
+simdutf_constexpr23 full_result base64_tail_decode(
+    char *dst, const char_type *src, size_t length,
+    size_t padding_characters, // number of padding characters
+                               // '=', typically 0, 1, 2.
+    base64_options options, last_chunk_handling_options last_chunk_options) {
   return base64_tail_decode_impl<false>(dst, 0, src, length, padding_characters,
                                         options, last_chunk_options);
 }
@@ -401,7 +380,7 @@ base64_tail_decode(char *dst, const char_type *src, size_t length,
 // written. This functions assumes that the padding (=) has been removed.
 //
 template <class char_type>
-full_result base64_tail_decode_safe(
+simdutf_constexpr23 full_result base64_tail_decode_safe(
     char *dst, size_t outlen, const char_type *src, size_t length,
     size_t padding_characters, // number of padding characters
                                // '=', typically 0, 1, 2.
@@ -411,7 +390,7 @@ full_result base64_tail_decode_safe(
                                        last_chunk_options);
 }
 
-inline full_result
+inline simdutf_constexpr23 full_result
 patch_tail_result(full_result r, size_t previous_input, size_t previous_output,
                   size_t equallocation, size_t full_input_length,
                   last_chunk_handling_options last_chunk_options) {
@@ -436,10 +415,10 @@ patch_tail_result(full_result r, size_t previous_input, size_t previous_output,
 // Returns the number of bytes written. The destination buffer must be large
 // enough. It will add padding (=) if needed.
 template <bool use_lines = false>
-size_t tail_encode_base64_impl(
+simdutf_constexpr23 size_t tail_encode_base64_impl(
     char *dst, const char *src, size_t srclen, base64_options options,
     size_t line_length = simdutf::default_line_length, size_t line_offset = 0) {
-  if (use_lines) {
+  if simdutf_constexpr (use_lines) {
     // sanitize line_length and starting_line_offset.
     // line_length must be greater than 3.
     if (line_length < 4) {
@@ -474,7 +453,7 @@ size_t tail_encode_base64_impl(
     t1 = uint8_t(src[i]);
     t2 = uint8_t(src[i + 1]);
     t3 = uint8_t(src[i + 2]);
-    if (use_lines) {
+    if simdutf_constexpr (use_lines) {
       if (line_offset + 3 >= line_length) {
         if (line_offset == line_length) {
           *out++ = '\n';
@@ -524,7 +503,7 @@ size_t tail_encode_base64_impl(
     break;
   case 1:
     t1 = uint8_t(src[i]);
-    if (use_lines) {
+    if simdutf_constexpr (use_lines) {
       if (use_padding) {
         if (line_offset + 3 >= line_length) {
           if (line_offset == line_length) {
@@ -590,7 +569,7 @@ size_t tail_encode_base64_impl(
   default: /* case 2 */
     t1 = uint8_t(src[i]);
     t2 = uint8_t(src[i + 1]);
-    if (use_lines) {
+    if simdutf_constexpr (use_lines) {
       if (use_padding) {
         if (line_offset + 3 >= line_length) {
           if (line_offset == line_length) {
@@ -667,14 +646,15 @@ size_t tail_encode_base64_impl(
 
 // Returns the number of bytes written. The destination buffer must be large
 // enough. It will add padding (=) if needed.
-inline size_t tail_encode_base64(char *dst, const char *src, size_t srclen,
-                                 base64_options options) {
+inline simdutf_constexpr23 size_t tail_encode_base64(char *dst, const char *src,
+                                                     size_t srclen,
+                                                     base64_options options) {
   return tail_encode_base64_impl(dst, src, srclen, options);
 }
 
-template <class char_type>
-simdutf_warn_unused size_t maximal_binary_length_from_base64(
-    const char_type *input, size_t length) noexcept {
+template <class InputPtr>
+simdutf_warn_unused simdutf_constexpr23 size_t
+maximal_binary_length_from_base64(InputPtr input, size_t length) noexcept {
   // We process the padding characters ('=') at the end to make sure
   // that we return an exact result when the input has no ignorable characters
   // (e.g., spaces).
@@ -715,7 +695,8 @@ simdutf_warn_unused size_t maximal_binary_length_from_base64(
 }
 
 template <typename char_type>
-simdutf_warn_unused full_result base64_to_binary_details_impl(
+simdutf_warn_unused simdutf_constexpr23 full_result
+base64_to_binary_details_impl(
     const char_type *input, size_t length, char *output, base64_options options,
     last_chunk_handling_options last_chunk_options) noexcept {
   const bool ignore_garbage =
@@ -769,7 +750,8 @@ simdutf_warn_unused full_result base64_to_binary_details_impl(
 }
 
 template <typename char_type>
-simdutf_warn_unused full_result base64_to_binary_details_safe_impl(
+simdutf_constexpr23 simdutf_warn_unused full_result
+base64_to_binary_details_safe_impl(
     const char_type *input, size_t length, char *output, size_t outlen,
     base64_options options,
     last_chunk_handling_options last_chunk_options) noexcept {
@@ -824,7 +806,7 @@ simdutf_warn_unused full_result base64_to_binary_details_safe_impl(
   return r;
 }
 
-simdutf_warn_unused size_t
+simdutf_warn_unused simdutf_constexpr23 size_t
 base64_length_from_binary(size_t length, base64_options options) noexcept {
   // By default, we use padding if we are not using the URL variant.
   // This is check with ((options & base64_url) == 0) which returns true if we
@@ -844,8 +826,9 @@ base64_length_from_binary(size_t length, base64_options options) noexcept {
          4; // We use padding to make the length a multiple of 4.
 }
 
-simdutf_warn_unused size_t base64_length_from_binary_with_lines(
-    size_t length, base64_options options, size_t line_length) noexcept {
+simdutf_warn_unused simdutf_constexpr23 size_t
+base64_length_from_binary_with_lines(size_t length, base64_options options,
+                                     size_t line_length) noexcept {
   if (length == 0) {
     return 0;
   }
