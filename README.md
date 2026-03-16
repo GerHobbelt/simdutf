@@ -125,7 +125,7 @@ Please refer to our benchmarking tool for a proper interpretation of the numbers
 ## Requirements
 
 - C++11 compatible compiler. We support LLVM clang, GCC, Visual Studio. (Our tests and benchmark tools requires C++17.) Be aware that GCC under Windows is buggy and thus unsupported.
-- For high speed, you should have a recent 64-bit system (e.g., ARM, x64, RISC-V with vector extensions, Loongson, POWER).
+- For high speed, you should have a recent 64-bit system (e.g., ARM, x64, RISC-V with vector extensions, Loongson, POWER). On Loongson processors, LASX runtime dispatching is only enabled on GCC 15+, not on LLVM or older versions of GCC.
 - If you rely on CMake, you should use a recent CMake (at least 3.15); otherwise you may use the [single header version](#single-header-version). The library is also available from [Microsoft's vcpkg](https://github.com/simdutf/simdutf-vcpkg), from [conan](https://conan.io/center/recipes/simdutf), from [FreeBSD's port](https://cgit.freebsd.org/ports/tree/converters/simdutf), from [brew](https://formulae.brew.sh/formula/simdutf), and many other systems.
 - AVX-512 support require a processor with AVX512-VBMI2 (Ice Lake or better, AMD Zen 4 or better) and a recent compiler (GCC 8 or better, Visual Studio 2022 or better, LLVM clang 6 or better). You need a correspondingly recent assembler such as gas (2.30+) or nasm (2.14+): recent compilers usually come with recent assemblers. If you mix a recent compiler with an incompatible/old assembler (e.g., when using a recent compiler with an old Linux distribution), you may get errors at build time because the compiler produces instructions that the assembler does not recognize: you should update your assembler to match your compiler (e.g., upgrade binutils to version 2.30 or better under Linux) or use an older compiler matching the capabilities of your assembler.
 - To benefit from RISC-V Vector Extensions on RISC-V systems, you should compile specifically for the desired architecture. E.g., add `-march=rv64gcv` as a compiler flag when using a version of GCC or LLVM which supports these extensions (such as GCC 14 or better). The command `CXXFLAGS=-march=rv64gcv cmake -B build` may suffice.
@@ -145,7 +145,7 @@ Linux or macOS users might follow the following instructions if they have a rece
 
 1. Pull the library in a directory
    ```
-   wget https://github.com/simdutf/simdutf/releases/download/v8.0.0/singleheader.zip
+   wget https://github.com/simdutf/simdutf/releases/download/v8.2.0/singleheader.zip
    unzip singleheader.zip
    ```
    You can replace `wget` by `curl -OL https://...` if you prefer.
@@ -191,7 +191,7 @@ You may also use a package manager. E.g.,  [we have a complete example using vcp
 You can create a single-header version of the library where
 all of the code is put into two files (`simdutf.h` and `simdutf.cpp`).
 We publish a zip archive containing these files, e.g., see
-https://github.com/simdutf/simdutf/releases/download/v8.0.0/singleheader.zip
+https://github.com/simdutf/simdutf/releases/download/v8.2.0/singleheader.zip
 
 You may generate it on your own using a Python script.
 
@@ -1942,6 +1942,25 @@ if(r.error) {
 }
 ```
 
+You can calculate the exact output space needed by using
+`binary_length_from_base64` which produces an exact number of output
+bytes if the input is well-formed. Well-formed means it contains
+only valid base64 and ASCII whitespace. Invalid input can be given to
+`binary_length_from_base64`. It will not detect invalid input, but the
+result can be safely used to size the output buffer for `base64_to_binary`,
+which does detect invalid input.
+
+```cpp
+std::vector<char> buffer(simdutf::binary_length_from_base64(base64.data(), base64.size()));
+simdutf::result r = simdutf::base64_to_binary(base64.data(), base64.size(), buffer.data());
+if (r.error != simdutf::SUCCESS) {
+  // handle error
+} else {
+  // buffer is already the exact size, no resize needed
+  assert(buffer.size() == r.count);
+}
+```
+
 Let us consider concrete examples.  Take the following strings:
 `"  A  A  "`, `"  A  A  G  A  /  v  8  "`, `"  A  A  G  A  /  v  8  =  "`, `"  A  A  G  A  /  v  8  =  =  "`.
 They are all valid WHATWG base64 inputs, except for the last one.
@@ -2207,6 +2226,36 @@ simdutf_warn_unused size_t maximal_binary_length_from_base64(const char * input,
  * @return maximal number of binary bytes
  */
 simdutf_warn_unused size_t maximal_binary_length_from_base64(const char16_t * input, size_t length) noexcept;
+
+/**
+ * Compute the binary length from a base64 input.
+ * This function is useful for base64 inputs that may contain ASCII whitespaces
+ * (such as line breaks). For such inputs, the result is exact, and for any
+ * inputs the result can be used to size the output buffer passed to
+ * `base64_to_binary`.
+ *
+ * The function ignores whitespace and does not require padding characters ('=').
+ *
+ * @param input         the base64 input to process
+ * @param length        the length of the base64 input in bytes
+ * @return number of binary bytes
+ */
+simdutf_warn_unused size_t binary_length_from_base64(const char * input, size_t length) noexcept;
+
+/**
+ * Compute the binary length from a base64 input.
+ * This function is useful for base64 inputs that may contain ASCII whitespaces
+ * (such as line breaks). For such inputs, the result is exact, and for any
+ * inputs the result can be used to size the output buffer passed to
+ * `base64_to_binary`.
+ *
+ * The function ignores whitespace and does not require padding characters ('=').
+ *
+ * @param input         the base64 input to process, in ASCII stored as 16-bit units
+ * @param length        the length of the base64 input in 16-bit units
+ * @return number of binary bytes
+ */
+simdutf_warn_unused size_t binary_length_from_base64(const char16_t * input, size_t length) noexcept;
 
 
 /**
