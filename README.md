@@ -149,7 +149,7 @@ Linux or macOS users might follow the following instructions if they have a rece
 
 1. Pull the library in a directory
    ```
-   wget https://github.com/simdutf/simdutf/releases/download/v9.0.0/singleheader.zip
+   wget https://github.com/simdutf/simdutf/releases/download/v9.1.0/singleheader.zip
    unzip singleheader.zip
    ```
    You can replace `wget` by `curl -OL https://...` if you prefer.
@@ -190,7 +190,7 @@ You may also use a package manager. E.g.,  [we have a complete example using vcp
 
 ## Single-header version
 
-You can create a single-header version of the library where all of the code is put into two files (`simdutf.h` and `simdutf.cpp`). We publish a zip archive containing these files, e.g., see https://github.com/simdutf/simdutf/releases/download/v9.0.0/singleheader.zip
+You can create a single-header version of the library where all of the code is put into two files (`simdutf.h` and `simdutf.cpp`). We publish a zip archive containing these files, e.g., see https://github.com/simdutf/simdutf/releases/download/v9.1.0/singleheader.zip
 
 You may generate it on your own using a Python script.
 
@@ -1264,6 +1264,24 @@ convert_utf16_to_utf8_safe(const char16_t *input, size_t length, char *utf8_outp
                             size_t utf8_len) noexcept;
 
 /**
+ * Using native endianness, convert possibly broken UTF-16 string into UTF-8
+ * string, replacing unpaired surrogates with the Unicode replacement character
+ * U+FFFD.
+ *
+ * This function always succeeds: unpaired surrogates are replaced with U+FFFD
+ * (3 bytes in UTF-8: 0xEF 0xBF 0xBD).
+ *
+ * This function is not BOM-aware.
+ *
+ * @param input         the UTF-16 string to convert
+ * @param length        the length of the string in 2-byte code units (char16_t)
+ * @param utf8_buffer   the pointer to buffer that can hold conversion result
+ * @return number of written code units
+ */
+simdutf_warn_unused size_t convert_utf16_to_utf8_with_replacement(
+    const char16_t *input, size_t length, char *utf8_buffer) noexcept;
+
+/**
  * Using native endianness, convert possibly broken UTF-16 string into Latin1 string.
  * If the string cannot be represented as Latin1, an error
  * is returned.
@@ -1328,6 +1346,23 @@ simdutf_warn_unused size_t convert_utf16be_to_latin1(const char16_t * input, siz
 simdutf_warn_unused size_t convert_utf16le_to_utf8(const char16_t * input, size_t length, char* utf8_buffer) noexcept;
 
 /**
+ * Convert possibly broken UTF-16LE string into UTF-8 string, replacing
+ * unpaired surrogates with the Unicode replacement character U+FFFD.
+ *
+ * This function always succeeds: unpaired surrogates are replaced with U+FFFD
+ * (3 bytes in UTF-8: 0xEF 0xBF 0xBD).
+ *
+ * This function is not BOM-aware.
+ *
+ * @param input         the UTF-16LE string to convert
+ * @param length        the length of the string in 2-byte code units (char16_t)
+ * @param utf8_buffer   the pointer to buffer that can hold conversion result
+ * @return number of written code units
+ */
+simdutf_warn_unused size_t convert_utf16le_to_utf8_with_replacement(
+    const char16_t *input, size_t length, char *utf8_buffer) noexcept;
+
+/**
  * Convert possibly broken UTF-16BE string into UTF-8 string.
  *
  * During the conversion also validation of the input string is done.
@@ -1341,6 +1376,23 @@ simdutf_warn_unused size_t convert_utf16le_to_utf8(const char16_t * input, size_
  * @return number of written code units; 0 if input is not a valid UTF-16LE string
  */
 simdutf_warn_unused size_t convert_utf16be_to_utf8(const char16_t * input, size_t length, char* utf8_buffer) noexcept;
+
+/**
+ * Convert possibly broken UTF-16BE string into UTF-8 string, replacing
+ * unpaired surrogates with the Unicode replacement character U+FFFD.
+ *
+ * This function always succeeds: unpaired surrogates are replaced with U+FFFD
+ * (3 bytes in UTF-8: 0xEF 0xBF 0xBD).
+ *
+ * This function is not BOM-aware.
+ *
+ * @param input         the UTF-16BE string to convert
+ * @param length        the length of the string in 2-byte code units (char16_t)
+ * @param utf8_buffer   the pointer to buffer that can hold conversion result
+ * @return number of written code units
+ */
+simdutf_warn_unused size_t convert_utf16be_to_utf8_with_replacement(
+    const char16_t *input, size_t length, char *utf8_buffer) noexcept;
 
 
 /**
@@ -1902,6 +1954,30 @@ If you have a UTF-16 input, you may change its endianness with a fast function.
 void change_endianness_utf16(const char16_t * input, size_t length, char16_t * output) noexcept;
 
 ```
+
+
+
+
+
+If, instead of failing on invalid input, you would rather replace unpaired surrogates with the Unicode replacement character (`U+FFFD`), you can use the `_with_replacement` conversions before sizing the output with the corresponding `_with_replacement` length function. These functions always succeed. For example, to go from UTF-16 to UTF-8 while replacing any unpaired surrogates:
+
+```cpp
+  // this UTF-16 string contains an unpaired surrogate (U+D800)
+  const char16_t source[] = u"A \xd800 B";
+  size_t length = 5;
+  // The length function always returns the correct byte count and sets the
+  // error field to SURROGATE when a surrogate (matched or not) is present.
+  simdutf::result res = simdutf::utf8_length_from_utf16_with_replacement(source, length);
+  std::unique_ptr<char[]> utf8{new char[res.count]};
+  // The conversion function replaces the unpaired surrogate with U+FFFD and
+  // always succeeds.
+  size_t written = simdutf::convert_utf16_to_utf8_with_replacement(
+      source, length, utf8.get());
+  if(res.error == simdutf::error_code::SURROGATE) {
+    std::cerr << "an unpaired surrogate was replaced with U+FFFD" << std::endl;
+  }
+```
+
 
 ## Cost of the safe conversion functions
 
@@ -3018,7 +3094,8 @@ We built simdutf with thread safety in mind. The simdutf library is single-threa
 
 ## References
 
-* Robert Clausecker, Daniel Lemire, [Transcoding Unicode Characters with AVX-512 Instructions](https://arxiv.org/abs/2212.05098),  Software: Practice and Experience 53 (12), 2023.
+* Robert Clausecker, Daniel Lemire, [Fixing ill-formed UTF-16 strings with SIMD instructions](https://arxiv.org/abs/2601.06349),  Software: Practice and Experience to appear, 2026.
+* * Robert Clausecker, Daniel Lemire, [Transcoding Unicode Characters with AVX-512 Instructions](https://arxiv.org/abs/2212.05098),  Software: Practice and Experience 53 (12), 2023.
 * Daniel Lemire, Wojciech Muła,  [Transcoding Billions of Unicode Characters per Second with SIMD Instructions](https://arxiv.org/abs/2109.10433), Software: Practice and Experience 52 (2), 2022.
 * John Keiser, Daniel Lemire, [Validating UTF-8 In Less Than One Instruction Per Byte](https://arxiv.org/abs/2010.03090), Software: Practice and Experience 51 (5), 2021.
 * Wojciech Muła, Daniel Lemire, [Base64 encoding and decoding at almost the speed of a memory copy](https://arxiv.org/abs/1910.05109), Software: Practice and Experience 50 (2), 2020.

@@ -473,7 +473,9 @@ static inline void base64_decode(char *out, __m256i str) {
 
   // Store the output:
   __lsx_vst(lasx_extracti128_lo(t3), out, 0);
-  __lsx_vst(lasx_extracti128_hi(t3), out, 12);
+  __m128i hi = lasx_extracti128_hi(t3);
+  __lsx_vstelm_d(hi, out + 12, 0, 0);
+  __lsx_vstelm_w(hi, out + 20, 0, 2);
 }
 // decode 64 bytes and output 48 bytes
 static inline void base64_decode_block(char *out, const char *src) {
