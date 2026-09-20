@@ -1052,7 +1052,7 @@ INLINE_SOURCES         = NO
 # Fortran comments will always remain visible.
 # The default value is: YES.
 
-STRIP_CODE_COMMENTS    = YES
+STRIP_CODE_COMMENTS    = NO
 
 # If the REFERENCED_BY_RELATION tag is set to YES then for each documented
 # entity all documented functions referencing it will be listed.
@@ -1249,7 +1249,8 @@ HTML_STYLESHEET        =
 
 HTML_EXTRA_STYLESHEET  = theme/doxygen-awesome.css \
                          theme/doxygen-awesome-sidebar-only.css \
-                         theme/doxygen-awesome-sidebar-only-darkmode-toggle.css
+                         theme/doxygen-awesome-sidebar-only-darkmode-toggle.css \
+                         doc/simdutf-overrides.css
 
 # The HTML_EXTRA_FILES tag can be used to specify one or more extra images or
 # other source files which should be copied to the HTML output directory. Note
