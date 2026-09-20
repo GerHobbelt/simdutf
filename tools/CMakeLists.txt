@@ -3,6 +3,18 @@ cmake_minimum_required(VERSION 3.15)
 add_executable(sutf sutf.cpp)
 add_executable(fastbase64 fastbase64.cpp)
 
+if(NOT WIN32)
+  add_custom_command(TARGET fastbase64 POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E remove -f $<TARGET_FILE_DIR:fastbase64>/fastbase64.coreutils$<TARGET_FILE_SUFFIX:fastbase64>
+    COMMAND ${CMAKE_COMMAND} -E create_symlink $<TARGET_FILE:fastbase64> $<TARGET_FILE_DIR:fastbase64>/fastbase64.coreutils$<TARGET_FILE_SUFFIX:fastbase64>
+  )
+else()
+  add_custom_command(TARGET fastbase64 POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E remove -f $<TARGET_FILE_DIR:fastbase64>/fastbase64.coreutils$<TARGET_FILE_SUFFIX:fastbase64>
+    COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:fastbase64> $<TARGET_FILE_DIR:fastbase64>/fastbase64.coreutils$<TARGET_FILE_SUFFIX:fastbase64>
+  )
+endif()
+
 if(SIMDUTF_ICONV)
 find_package(Iconv)
 if(Iconv_FOUND)
@@ -52,14 +64,22 @@ if((CMAKE_CXX_COMPILER_ID STREQUAL "GNU") OR (CMAKE_CXX_COMPILER_ID STREQUAL "Cl
     target_link_options(fastbase64 PRIVATE "-Wl,--gc-sections")
   endif()
 endif()
-message(STATUS "The tools require C++17. If your system does not support C++17, please set SIMDUTF_TOOLS to OFF.")
-set_property(TARGET sutf PROPERTY CXX_STANDARD 17)
-set_property(TARGET sutf PROPERTY CXX_STANDARD_REQUIRED ON)
-set_property(TARGET fastbase64 PROPERTY CXX_STANDARD 17)
-set_property(TARGET fastbase64 PROPERTY CXX_STANDARD_REQUIRED ON)
 
-target_link_libraries(sutf PUBLIC simdutf)
-target_link_libraries(fastbase64 PUBLIC simdutf)
+target_link_libraries(sutf PUBLIC simdutf-nobase64)
+target_compile_definitions(sutf PRIVATE
+  SIMDUTF_FEATURE_BASE64=0
+  SIMDUTF_FEATURE_DETECT_ENCODING=0
+)
+
+target_link_libraries(fastbase64 PUBLIC simdutf-base64)
+target_compile_definitions(fastbase64 PRIVATE
+  SIMDUTF_FEATURE_UTF8=0
+  SIMDUTF_FEATURE_UTF16=0
+  SIMDUTF_FEATURE_UTF32=0
+  SIMDUTF_FEATURE_ASCII=0
+  SIMDUTF_FEATURE_LATIN1=0
+  SIMDUTF_FEATURE_DETECT_ENCODING=0
+)
 
 if(WIN32 AND BUILD_SHARED_LIBS)
   # Copy the simdutf dll into the directory
@@ -82,4 +102,54 @@ install(
    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
+
+if(WIN32)
+  # On Windows, install a copy of fastbase64 as fastbase64.coreutils
+  install(PROGRAMS $<TARGET_FILE:fastbase64>
+    DESTINATION ${CMAKE_INSTALL_BINDIR}
+    RENAME fastbase64.coreutils
+  )
+else()
+  # On non-Windows, create a symlink fastbase64.coreutils -> fastbase64 at install time
+  install(CODE "
+    if(IS_ABSOLUTE \"${CMAKE_INSTALL_BINDIR}\")
+      set(BINDIR \"${CMAKE_INSTALL_BINDIR}\")
+    else()
+      set(BINDIR \"\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}\")
+    endif()
+    set(BINDIR \"\$ENV{DESTDIR}\${BINDIR}\")
+    file(MAKE_DIRECTORY \"\${BINDIR}\")
+    # Remove any existing file or symlink so create_symlink will not fail with \"file exists\"
+    file(REMOVE \"\${BINDIR}/fastbase64.coreutils\")
+    execute_process(
+      COMMAND \"${CMAKE_COMMAND}\" -E create_symlink
+              \"fastbase64\"
+              \"\${BINDIR}/fastbase64.coreutils\"
+      RESULT_VARIABLE _fastbase64_symlink_result
+      ERROR_VARIABLE _fastbase64_symlink_error
+    )
+    if(NOT _fastbase64_symlink_result EQUAL 0)
+      message(FATAL_ERROR
+        \"Failed to create symlink \${BINDIR}/fastbase64.coreutils -> fastbase64: \${_fastbase64_symlink_error}\")
+    endif()
+  ")
+endif()
+
+install(
+   FILES
+    ${CMAKE_SOURCE_DIR}/man/fastbase64.1
+   DESTINATION ${CMAKE_INSTALL_MANDIR}/man1
+)
+
+install(
+   FILES
+    ${CMAKE_SOURCE_DIR}/man/fastbase64.coreutils.1
+   DESTINATION ${CMAKE_INSTALL_MANDIR}/man1
+)
+
+install(
+   FILES
+    ${CMAKE_SOURCE_DIR}/man/sutf.1
+   DESTINATION ${CMAKE_INSTALL_MANDIR}/man1
 )

@@ -481,3 +481,24 @@ if(Python3_FOUND AND GIT_EXECUTABLE)
   )
   set_tests_properties(check_feature_macros PROPERTIES SKIP_RETURN_CODE 142) # Skip if no relevant files are found
 endif()
+
+if(SIMDUTF_TOOLS AND SIMDUTF_TOOL_TESTS AND Python3_FOUND)
+  add_test(NAME fastbase64_python_test
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/fastbase64/test_fastbase64.py $<TARGET_FILE:fastbase64> $<TARGET_FILE_DIR:fastbase64>/fastbase64.coreutils$<TARGET_FILE_SUFFIX:fastbase64>
+    WORKING_DIRECTORY ${SIMDUTF_SOURCE_DIR}
+  )
+  add_test(NAME fastbase64_system_test
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/fastbase64/test_system_fastbase64.py $<TARGET_FILE:fastbase64> $<TARGET_FILE_DIR:fastbase64>/fastbase64.coreutils$<TARGET_FILE_SUFFIX:fastbase64>
+    WORKING_DIRECTORY ${SIMDUTF_SOURCE_DIR}
+  )
+endif()
+
+
+# Smoke test: compile a pure-C program against the C API and link it without
+# the C++ standard library, proving libsimdutf-nostdlibcxx.a is self-contained.
+if(TARGET simdutf-nostdlibcxx AND NOT SIMDUTF_SANITIZE AND NOT SIMDUTF_SANITIZE_UNDEFINED AND NOT SIMDUTF_SANITIZE_THREAD)
+  add_executable(nostdlibcxx_c_api_test nostdlibcxx_c_api_test.c)
+  target_link_libraries(nostdlibcxx_c_api_test PRIVATE simdutf-nostdlibcxx)
+  target_link_options(nostdlibcxx_c_api_test PRIVATE -nostdlib++)
+  add_test(NAME nostdlibcxx_c_api_test COMMAND nostdlibcxx_c_api_test)
+endif()

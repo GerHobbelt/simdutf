@@ -1,9 +1,9 @@
-cmake_minimum_required(VERSION 3.15)
+cmake_minimum_required(VERSION 3.18)
 
 project(simdutf
   DESCRIPTION "Fast Unicode validation, transcoding and processing"
   LANGUAGES C CXX
-  VERSION 8.2.0
+  VERSION 9.0.0
 )
 
 include (TestBigEndian)
@@ -23,10 +23,11 @@ include(GNUInstallDirs)
 include(CTest)
 include(cmake/simdutf-flags.cmake)
 
-set(SIMDUTF_LIB_VERSION "33.0.0" CACHE STRING "simdutf library version")
-set(SIMDUTF_LIB_SOVERSION "33" CACHE STRING "simdutf library soversion")
+set(SIMDUTF_LIB_VERSION "34.0.0" CACHE STRING "simdutf library version")
+set(SIMDUTF_LIB_SOVERSION "34" CACHE STRING "simdutf library soversion")
 option(SIMDUTF_TESTS "Whether the tests are included as part of the CMake Build." ON)
 option(SIMDUTF_FAST_TESTS "Whether parameters to the tests are adapted to make them execute quicker" OFF)
+option(SIMDUTF_TOOL_TESTS "Whether to tests the tools" OFF)
 option(SIMDUTF_ATOMIC_BASE64_TESTS "Whether to test the atomic base64 functions. (OFF by default)" OFF)
 option(SIMDUTF_BENCHMARKS "Whether the benchmarks are included as part of the CMake Build." OFF)
 option(SIMDUTF_TOOLS "Whether the tools are included as part of the CMake build. Requires C++17 or better." ON)
@@ -35,12 +36,9 @@ option(SIMDUTF_FUZZERS "Whether to build the fuzzers." OFF)
 option(SIMDUTF_COVERAGE "Enable code coverage collection during tests (only GCC and Clang)." OFF)
 option(SIMDUTF_INTERNAL_TESTS "Whether to test also internal procedures. Useful mostly for developers, not users." OFF)
 option(SIMDUTF_LOGGING "Whether to enable logging (this should never be used in binary releases)." OFF)
+option(SIMDUTF_USE_STATIC_INITIALIZATION "Whether to use translation-unit-scope static variables for implementation singletons (faster, but unsafe before main() when used in a library)." OFF)
 option(FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION "Whether to enable unsafe fuzzing mode." OFF)
 
-if(SIMDUTF_LOGGING AND DEFINED CMAKE_CXX_STANDARD AND CMAKE_CXX_STANDARD LESS 17)
-    set(CMAKE_CXX_STANDARD 17)
-    set(CMAKE_CXX_STANDARD_REQUIRED ON)
-endif()
 set(SIMDUTF_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 
 add_subdirectory(src)

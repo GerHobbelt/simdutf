@@ -14,6 +14,9 @@ endif()
 if(SIMDUTF_LOGGING)
   target_compile_definitions(simdutf PUBLIC SIMDUTF_LOGGING=1)
 endif()
+if(SIMDUTF_USE_STATIC_INITIALIZATION)
+  target_compile_definitions(simdutf PUBLIC SIMDUTF_USE_STATIC_INITIALIZATION=1)
+endif()
 if(FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION)
   target_compile_definitions(simdutf PUBLIC FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION=1)
 endif()
@@ -52,9 +55,69 @@ if ((CMAKE_CXX_COMPILER_ID STREQUAL "GNU") AND (CMAKE_SYSTEM STREQUAL "PowerPC")
   target_compile_options(simdutf PRIVATE -maltivec -mvsx -mcpu=power8)
 endif()
 
+##
+## Feature-specific library variants for the tools.
+## These are NOT installed — they exist only to give each tool a smaller binary.
+##
+if(SIMDUTF_TOOLS)
+  # --- simdutf-base64: only base64 support (for fastbase64) ---
+  add_library(simdutf-base64 STATIC simdutf.cpp)
+  target_include_directories(simdutf-base64 PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>)
+  target_include_directories(simdutf-base64 PUBLIC "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>")
+  target_compile_definitions(simdutf-base64 PRIVATE
+    SIMDUTF_FEATURE_BASE64=1
+    SIMDUTF_FEATURE_UTF8=0
+    SIMDUTF_FEATURE_UTF16=0
+    SIMDUTF_FEATURE_UTF32=0
+    SIMDUTF_FEATURE_ASCII=0
+    SIMDUTF_FEATURE_LATIN1=0
+    SIMDUTF_FEATURE_DETECT_ENCODING=0
+  )
+  set_target_properties(simdutf-base64 PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+  # --- simdutf-nobase64: everything except base64 (for sutf) ---
+  add_library(simdutf-nobase64 STATIC simdutf.cpp)
+  target_include_directories(simdutf-nobase64 PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>)
+  target_include_directories(simdutf-nobase64 PUBLIC "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>")
+  target_compile_definitions(simdutf-nobase64 PRIVATE
+    SIMDUTF_FEATURE_BASE64=0
+    SIMDUTF_FEATURE_UTF8=1
+    SIMDUTF_FEATURE_UTF16=1
+    SIMDUTF_FEATURE_UTF32=1
+    SIMDUTF_FEATURE_ASCII=1
+    SIMDUTF_FEATURE_LATIN1=1
+    SIMDUTF_FEATURE_DETECT_ENCODING=0
+  )
+  set_target_properties(simdutf-nobase64 PROPERTIES POSITION_INDEPENDENT_CODE ON)
+endif()
+
 if(SIMDUTF_ALWAYS_INCLUDE_FALLBACK)
   message(STATUS "SIMDUTF_ALWAYS_INCLUDE_FALLBACK is set to ${SIMDUTF_ALWAYS_INCLUDE_FALLBACK}")
   target_compile_definitions(simdutf PRIVATE SIMDUTF_IMPLEMENTATION_FALLBACK=1)
+endif()
+
+include(CheckCXXCompilerFlag)
+include(CheckLinkerFlag)
+
+check_cxx_compiler_flag("-fno-exceptions" HAVE_CXX_FLAG_NO_EXCEPTIONS)
+check_cxx_compiler_flag("-fno-rtti" HAVE_CXX_FLAG_NO_RTTI)
+check_linker_flag(CXX "-nostdlib++" HAVE_CXX_LINKER_FLAG_NO_STDLIBXX)
+
+##
+## simdutf-nostdlibcxx: a variant of the library that does not require the C++
+## standard library runtime (libc++ / libc++abi / libstdc++). It is intended to
+## be consumed through the C interface (simdutf_c.h) and only supports GCC and
+## Clang.
+if(HAVE_CXX_FLAG_NO_EXCEPTIONS AND HAVE_CXX_FLAG_NO_RTTI AND HAVE_CXX_LINKER_FLAG_NO_STDLIBXX)
+  add_library(simdutf-nostdlibcxx STATIC simdutf.cpp)
+  target_include_directories(simdutf-nostdlibcxx PRIVATE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>)
+  target_include_directories(simdutf-nostdlibcxx PUBLIC
+    "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>")
+  target_compile_definitions(simdutf-nostdlibcxx PRIVATE SIMDUTF_NO_LIBCXX=1)
+  target_compile_options(simdutf-nostdlibcxx PRIVATE
+    -fno-exceptions -fno-rtti)
+  set_target_properties(simdutf-nostdlibcxx PROPERTIES POSITION_INDEPENDENT_CODE ON)
 endif()
 
 if(SIMDUTF_SANITIZE)

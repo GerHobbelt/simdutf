@@ -20,8 +20,12 @@
   - [Find](#find)
   - [C++20 and std::span usage in simdutf](#c20-and-stdspan-usage-in-simdutf)
   - [C++23 and constexpr support](#c23-and-constexpr-support)
-  - [The sutf command-line tool](#the-sutf-command-line-tool)
+  - [Command-line tools](#command-line-tools)
   - [Manual implementation selection](#manual-implementation-selection)
+  - [Benchmarks](#benchmarks)
+  - [Compiling without the C++ standard library](#compiling-without-the-c-standard-library)
+  - [C API](#c-api-c11-or-better)
+  - [SIMDUTF\_USE\_STATIC\_INITIALIZATION](#simdutf_use_static_initialization)
   - [Thread safety](#thread-safety)
   - [References](#references)
   - [License](#license)
@@ -88,6 +92,8 @@ The simdutf library is used by:
 - [klogg](https://github.com/variar/klogg), a Really fast log explorer,
 - [Pixie](https://github.com/pixie-io/pixie), observability tool for Kubernetes applications,
 - [fluentbit](https://github.com/fluent/fluent-bit), Fast and Lightweight Logs, Metrics and Traces processor for Linux, BSD, OSX and Windows,
+- [ghostty](https://github.com/ghostty-org/ghostty), Fast terminal emulator,
+- [uWebSockets](https://github.com/uNetworking/uWebSockets), web server for the most demanding of applications,
 - [vte](https://gitlab.gnome.org/GNOME/vte) (0.81.0 or better), a virtual terminal widget for GTK applications.
 
 
@@ -125,7 +131,7 @@ Please refer to our benchmarking tool for a proper interpretation of the numbers
 
 ## Requirements
 
-- C++11 compatible compiler. We support LLVM clang, GCC, Visual Studio. (Our tests and benchmark tools requires C++17.) Be aware that GCC under Windows is buggy and thus unsupported.
+- C++17 compatible compiler. We support LLVM clang, GCC, Visual Studio. Be aware that GCC under Windows is buggy and thus unsupported.
 - For high speed, you should have a recent 64-bit system (e.g., ARM, x64, RISC-V with vector extensions, Loongson, POWER). On Loongson processors, LASX runtime dispatching is only enabled on GCC 15+, not on LLVM or older versions of GCC.
 - If you rely on CMake, you should use a recent CMake (at least 3.15); otherwise you may use the [single header version](#single-header-version). The library is also available from [Microsoft's vcpkg](https://github.com/simdutf/simdutf-vcpkg), from [conan](https://conan.io/center/recipes/simdutf), from [FreeBSD's port](https://cgit.freebsd.org/ports/tree/converters/simdutf), from [brew](https://formulae.brew.sh/formula/simdutf), and many other systems.
 - AVX-512 support require a processor with AVX512-VBMI2 (Ice Lake or better, AMD Zen 4 or better) and a recent compiler (GCC 8 or better, Visual Studio 2022 or better, LLVM clang 6 or better). You need a correspondingly recent assembler such as gas (2.30+) or nasm (2.14+): recent compilers usually come with recent assemblers. If you mix a recent compiler with an incompatible/old assembler (e.g., when using a recent compiler with an old Linux distribution), you may get errors at build time because the compiler produces instructions that the assembler does not recognize: you should update your assembler to match your compiler (e.g., upgrade binutils to version 2.30 or better under Linux) or use an older compiler matching the capabilities of your assembler.
@@ -146,7 +152,7 @@ Linux or macOS users might follow the following instructions if they have a rece
 
 1. Pull the library in a directory
    ```
-   wget https://github.com/simdutf/simdutf/releases/download/v8.2.0/singleheader.zip
+   wget https://github.com/simdutf/simdutf/releases/download/v9.0.0/singleheader.zip
    unzip singleheader.zip
    ```
    You can replace `wget` by `curl -OL https://...` if you prefer.
@@ -192,7 +198,7 @@ You may also use a package manager. E.g.,  [we have a complete example using vcp
 You can create a single-header version of the library where
 all of the code is put into two files (`simdutf.h` and `simdutf.cpp`).
 We publish a zip archive containing these files, e.g., see
-https://github.com/simdutf/simdutf/releases/download/v8.2.0/singleheader.zip
+https://github.com/simdutf/simdutf/releases/download/v9.0.0/singleheader.zip
 
 You may generate it on your own using a Python script.
 
@@ -332,8 +338,8 @@ also have a span overload. Here is an example:
 
 ```cpp
 std::vector<char> data{1, 2, 3, 4, 5};
-// C++11 API
-auto cpp11 = simdutf::autodetect_encoding(data.data(), data.size());
+// C++17 API
+auto cpp17 = simdutf::autodetect_encoding(data.data(), data.size());
 // C++20 API
 auto cpp20 = simdutf::autodetect_encoding(data);
 ```
@@ -2013,6 +2019,47 @@ output: error
 
 As you can see, the result is as expected.
 
+The `base64_to_binary` function returns a `simdutf::result` which on success contains
+the number of output bytes in `r.count`. If you need to know both the number of input units
+consumed and the number of output bytes written (e.g., for streaming/chunked decoding), use
+`base64_to_binary_details` which returns a `simdutf::full_result`:
+
+```cpp
+std::vector<char> buffer(simdutf::maximal_binary_length_from_base64(base64.data(), base64.size()));
+simdutf::full_result r = simdutf::base64_to_binary_details(base64.data(), base64.size(), buffer.data());
+if(r.error) {
+  // r.input_count tells you where the error was encountered in the input.
+  // r.output_count tells you how many bytes were written to the output.
+} else {
+  buffer.resize(r.output_count); // resize according to actual output bytes
+  // r.input_count contains the number of input units consumed
+}
+```
+
+There are three cases where `base64_to_binary_details` may not consume the entire input
+(i.e., `r.input_count < length`):
+
+1. **`stop_before_partial`**: When `last_chunk_options` is set to
+   `stop_before_partial`, any incomplete 4-character group at the end
+   of the input is left unconsumed. This is useful for streaming/chunked
+   decoding where you carry over the unconsumed bytes to the next chunk.
+   For example, the input `"QWJy YQ"` contains 5 base64 characters (ignoring the space):
+   only the first complete group of 4 (`QWJy`) is decoded, and `input_count` stops
+   before the trailing `YQ`.
+2. **`INVALID_BASE64_CHARACTER`**: The input contains a character that is not
+   a valid base64 character (e.g., `!`). The `input_count` field indicates
+   where the invalid character was found.
+3. **`BASE64_INPUT_REMAINDER`**: In `loose` mode, the input contains a number
+   of base64 characters that, when divided by 4, leaves a single remainder
+   character (which cannot encode any bytes). This is an unrecoverable error.
+
+You can also check whether a single character is a valid base64 character using `base64_valid`:
+```cpp
+bool is_valid = simdutf::base64_valid('A'); // true
+bool is_valid_url = simdutf::base64_valid('-', simdutf::base64_url); // true
+// Note: padding ('=') and spaces are not considered valid base64 characters.
+```
+
 In some instances, you may want to limit the size of the output further when decoding base64.
 For this purpose, you may use the `base64_to_binary_safe` functions. The functions may also
 be useful if you seek to decode the input into segments having a maximal capacity.
@@ -2110,6 +2157,31 @@ file or networking programming. These users should see `tools/fastbase64.cpp`, a
 utility designed for as an example. It reads and writes base64 files using chunks of at most
 a few tens of kilobytes.
 
+### Compile-time base64 decoding (C++23)
+
+If you have C++23 support, you can decode base64 strings at compile time using the
+`_base64` user-defined literal. The result is a `std::array<char, N>` where `N` is
+the decoded size, computed at compile time:
+
+```cpp
+using namespace simdutf::literals;
+
+constexpr auto decoded = "SGVsbG8gV29ybGQh"_base64;
+// decoded is std::array<char, 12> containing "Hello World!"
+
+static_assert(decoded.size() == 12);
+static_assert(decoded[0] == 'H');
+```
+
+Spaces within the base64 string are allowed and ignored, just like the runtime API:
+
+```cpp
+constexpr auto decoded = "  SGVsbG8g  V29ybGQh  "_base64;
+// same result: "Hello World!"
+```
+
+Invalid base64 input causes a compilation error. The literal uses the default
+base64 alphabet (`base64_default`) and loose last-chunk handling.
 
 We support two conventions: `base64_default` and `base64_url`:
 * The default (`base64_default`) includes the characters `+` and `/` as part of its alphabet. It also
@@ -2504,6 +2576,120 @@ simdutf_warn_unused result base64_to_binary_safe(const char * input, size_t leng
 simdutf_warn_unused result base64_to_binary_safe(const char16_t * input, size_t length, char* output, size_t& outlen, base64_options options = base64_default,
       last_chunk_handling_options last_chunk_options = loose,
       bool decode_up_to_bad_char = false) noexcept;
+
+/**
+ * Convert a base64 input to a binary output while returning more details
+ * than base64_to_binary.
+ *
+ * This function follows the WHATWG forgiving-base64 format, which means that it
+ * will ignore any ASCII spaces in the input. You may provide a padded input
+ * (with one or two equal signs at the end) or an unpadded input (without any
+ * equal signs at the end).
+ *
+ * See https://infra.spec.whatwg.org/#forgiving-base64-decode
+ *
+ * Unlike base64_to_binary, this function returns a full_result with both
+ * input_count and output_count, so you always know how much input was consumed
+ * and how much output was written. There are three cases where the input may
+ * not be fully consumed:
+ *
+ * 1. stop_before_partial: When last_chunk_options is set to
+ *    stop_before_partial, any incomplete 4-character group at the end of the
+ *    input is left unconsumed. This is useful for streaming/chunked decoding
+ *    where you can carry over the unconsumed input to the next chunk.
+ *
+ * 2. INVALID_BASE64_CHARACTER: The input contains a character that is not a
+ *    valid base64 character. In this case, input_count indicates where the
+ *    invalid character was found.
+ *
+ * 3. BASE64_INPUT_REMAINDER: When last_chunk_options is loose, the input
+ *    contains a number of base64 characters that, when divided by 4, leaves
+ *    a single remainder character (which cannot encode any bytes).
+ *
+ * You should call this function with a buffer that is at least
+ * maximal_binary_length_from_base64(input, length) bytes long. If you fail to
+ * provide that much space, the function may cause a buffer overflow.
+ *
+ * @param input         the base64 string to process
+ * @param length        the length of the string in bytes
+ * @param output        the pointer to a buffer that can hold the conversion
+ * result (should be at least maximal_binary_length_from_base64(input, length)
+ * bytes long).
+ * @param options       the base64 options to use, can be base64_default or
+ * base64_url, is base64_default by default.
+ * @param last_chunk_options the last chunk handling options,
+ * last_chunk_handling_options::loose by default
+ * but can also be last_chunk_handling_options::strict or
+ * last_chunk_handling_options::stop_before_partial.
+ * @return a full_result struct (of type simdutf::full_result containing the
+ * three fields error, input_count and output_count).
+ */
+simdutf_warn_unused full_result base64_to_binary_details(const char * input, size_t length, char* output,
+      base64_options options = base64_default,
+      last_chunk_handling_options last_chunk_options = loose) noexcept;
+
+/**
+ * Convert a base64 input to a binary output while returning more details
+ * than base64_to_binary.
+ *
+ * This function follows the WHATWG forgiving-base64 format, which means that it
+ * will ignore any ASCII spaces in the input. You may provide a padded input
+ * (with one or two equal signs at the end) or an unpadded input (without any
+ * equal signs at the end).
+ *
+ * See https://infra.spec.whatwg.org/#forgiving-base64-decode
+ *
+ * Unlike base64_to_binary, this function returns a full_result with both
+ * input_count and output_count, so you always know how much input was consumed
+ * and how much output was written. There are three cases where the input may
+ * not be fully consumed:
+ *
+ * 1. stop_before_partial: When last_chunk_options is set to
+ *    stop_before_partial, any incomplete 4-character group at the end of the
+ *    input is left unconsumed. This is useful for streaming/chunked decoding
+ *    where you can carry over the unconsumed input to the next chunk.
+ *
+ * 2. INVALID_BASE64_CHARACTER: The input contains a character that is not a
+ *    valid base64 character. In this case, input_count indicates where the
+ *    invalid character was found.
+ *
+ * 3. BASE64_INPUT_REMAINDER: When last_chunk_options is loose, the input
+ *    contains a number of base64 characters that, when divided by 4, leaves
+ *    a single remainder character (which cannot encode any bytes).
+ *
+ * You should call this function with a buffer that is at least
+ * maximal_binary_length_from_base64(input, length) bytes long. If you fail to
+ * provide that much space, the function may cause a buffer overflow.
+ *
+ * @param input         the base64 string to process, in ASCII stored as 16-bit
+ * units
+ * @param length        the length of the string in 16-bit units
+ * @param output        the pointer to a buffer that can hold the conversion
+ * result (should be at least maximal_binary_length_from_base64(input, length)
+ * bytes long).
+ * @param options       the base64 options to use, can be base64_default or
+ * base64_url, is base64_default by default.
+ * @param last_chunk_options the last chunk handling options,
+ * last_chunk_handling_options::loose by default
+ * but can also be last_chunk_handling_options::strict or
+ * last_chunk_handling_options::stop_before_partial.
+ * @return a full_result struct (of type simdutf::full_result containing the
+ * three fields error, input_count and output_count).
+ */
+simdutf_warn_unused full_result base64_to_binary_details(const char16_t * input, size_t length, char* output,
+      base64_options options = base64_default,
+      last_chunk_handling_options last_chunk_options = loose) noexcept;
+
+/**
+ * Check if a character is a valid base64 character.
+ * Note that padding characters ('=') and spaces are not considered valid.
+ *
+ * @param input         the character to check
+ * @param options       the base64 options to use, is base64_default by default.
+ * @return true if the character is a valid base64 character.
+ */
+simdutf_warn_unused bool base64_valid(char input, base64_options options = base64_default) noexcept;
+simdutf_warn_unused bool base64_valid(char16_t input, base64_options options = base64_default) noexcept;
 ```
 
 ## Find
@@ -2601,19 +2787,84 @@ modifications made to make it usable at constexpr time. Also, when in a constexp
 as during normal dynamic invocation. For this reason, there might have slipped in subtle bugs and the constexpr
 support is considered experimental. Please report any bugs you encounter!
 
-## The sutf command-line tool
+## Command-line tools
 
-We also provide a command-line tool which can be build as follows:
+We provide two command-line tools that can be built as follows:
 ```
-cmake -B build && cmake --build build --target sutf
+cmake -B build && cmake --build build --target sutf fastbase64
 ```
-This command builds the executable in `./build/tool/` under most platforms. The sutf tool enables the user to easily transcode files from one encoding to another directly from the command line.
-The usage is similar to [iconv](https://www.gnu.org/software/libiconv/) (see `sutf --help` for more details). The sutf command-line tool relies on the simdutf library functions for fast transcoding of supported
+This command builds the executables in `./build/tools/` under most platforms.
+
+### sutf: Text encoding converter
+
+The sutf tool enables transcoding files from one encoding to another directly from the command line.
+The usage is similar to [iconv](https://www.gnu.org/software/libiconv/) (see `sutf --help` or `man sutf` for more details). The sutf command-line tool relies on the simdutf library functions for fast transcoding of supported
 formats (UTF-8, UTF-16LE, UTF-16BE and UTF-32). If iconv is found on the system and simdutf does not support a conversion, the sutf tool falls back on iconv: a message lets the user know if iconv is available
 during compilation. The following is an example of transcoding two input files to an output file, from UTF-8 to UTF-16LE:
 ```
 sutf -f UTF-8 -t UTF-16LE -o output_file.txt first_input_file.txt second_input_file.txt
 ```
+
+
+### fastbase64: Base64 encoder/decoder
+
+The fastbase64 tools provide high-performance base64 encoding and decoding. They are ideally suited if you need to encode or decode large files. There are two variants that are meant to serve as drop-in replacements:
+
+- `fastbase64`: BSD/macOS-like interface.
+- `fastbase64.coreutils`: GNU coreutils-compatible interface, matching GNU base64 behavior.
+
+Both commands have additional specific flags not present in the conventional tools.
+
+#### fastbase64: BSD-like Base64 encoder/decoder
+
+The `fastbase64` tool provides high-performance base64 encoding and decoding with BSD/macOS-compatible behavior. It defaults to encoding binary input to base64 output with no line wrapping. Examples:
+
+```
+# Encode a file (default, no wrapping)
+fastbase64 -i myfile.txt
+
+# Decode base64 data
+fastbase64 -d -i encoded.txt
+
+# Encode with custom line wrapping
+fastbase64 -b 76 -i myfile.txt
+```
+
+#### fastbase64.coreutils: GNU coreutils-compatible Base64 encoder/decoder
+
+The `fastbase64.coreutils` tool provides high-performance base64 encoding and decoding with GNU coreutils-compatible behavior. It defaults to encoding binary input to base64 output with line wrapping at 76 characters. Examples:
+
+```
+# Encode a file (default, with 76-character line wrapping)
+fastbase64.coreutils myfile.txt
+
+# Decode base64 data
+fastbase64.coreutils -d < encoded.txt
+
+# Encode without line wrapping
+fastbase64.coreutils -w 0 myfile.txt
+```
+
+
+#### Performance
+
+The `fastbase64` tools can be several times faster than standard base64 tools. See `scripts/base64bench.sh` for a benchmark.
+
+**Apple M4 Max**
+
+Size     | Encode Base64 | Encode FastBase64 | Decode Base64 | Decode FastBase64
+---------|---------------|-------------------|---------------|------------------
+1m       | 21.6          | 21.3              | 35.5          | 21.3
+10m      | 32.3          | 25.6              | 163.6         | 26.2
+100m     | 119.5         | 49.3              | 1433.5        | 52.7
+
+**Linux with Xeon Gold 6548N**
+
+Size     | Encode Base64 | Encode FastBase64 | Decode Base64 | Decode FastBase64
+---------|---------------|-------------------|---------------|------------------
+1m       | 13.4          | 15.9              | 13.7          | 12.8
+10m      | 27.8          | 23.0              | 37.3          | 17.8
+100m     | 183.1         | 93.0              | 291.8         | 84.4
 
 ## Manual implementation selection
 
@@ -2669,9 +2920,7 @@ int main(void) {
 
 ## Benchmarks
 
-To run benchmarks, build the project with benchmarks enabled.  Our default benchmarks are in the  `benchmark` command. You can get help on its
-usage by first building it and then calling it with the `--help` flag.
-E.g., under Linux you may do the following:
+To run the benchmarks, you need a recent C++ compiler and a recent version of cmake. Build the project with benchmarks enabled.  Our default benchmarks are in the  `benchmark` command. You can get help on its usage by first building it and then calling it with the `--help` flag. E.g., under Linux you may do the following:
 
 ```shell
 cmake -B build -D SIMDUTF_BENCHMARKS=ON
@@ -2679,8 +2928,30 @@ cmake --build build
 ./build/benchmarks/benchmark --help
 ```
 
+It will automatically build the code in release mode, in a way suitable for benchmarking. We require the `SIMDUTF_BENCHMARKS` option because we do not build benchmarks by default (to save time). To speed up the the build you can do `cmake --build build -j 10` on a 10-core system.
 
-The standard benchmark tool `benchmark` provides comprehensive transcoding benchmarks between different encodings. It supports various procedures like converting UTF-8 to UTF-16, UTF-16 to UTF-8, and more. You can list available procedures with `--procedures`, run specific benchmarks, or use filters to select particular tests. For example, to benchmark UTF-8 to UTF-16 conversion on a file, use `./build/benchmarks/benchmark --procedure utf8_to_utf16 file.txt`. It outputs detailed performance metrics including throughput in GB/s and CPU cycles.
+The standard benchmark tool `benchmark` provides comprehensive transcoding benchmarks between different encodings. It supports various procedures like converting UTF-8 to UTF-16, UTF-16 to UTF-8, and more. You can list available procedures with `--procedures`, run specific benchmarks, or use filters to select particular tests. For example, to benchmark UTF-8 to UTF-16 conversion on a file, use `./build/benchmarks/benchmark --procedure utf8_to_utf16  --input-file file.txt`. It outputs detailed performance metrics including throughput in GB/s.
+
+When performance counters are available, we output instructions and cycle counts. To get performance counters (under Linux and macOS), you need privileged access which can sometimes mean that you need to run the benchmark under the `sudo` command. Some systems (e.g., on the cloud) do not give access to the performance counters, check the Linux documentation.
+
+For test files, we recommend that [unicode lipsum dataset](https://github.com/lemire/unicode_lipsum). It contains various files suitable for benchmarking. E.g., the file `lipsum/Arabic-Lipsum.utf8.txt` can be used for benchmarking like so:
+
+```
+ ./build/benchmarks/benchmark --procedure convert_utf8_to_utf16le+ --input-file ul/lipsum/Arabic-Lipsum.utf8.txt
+```
+
+if you have put the unicode lipsum dataset in the `ul` directory. You may prefix the command by `sudo` if you want to get the performance counters. We also have shorter commands if you prefer:
+
+```
+ ./build/benchmarks/benchmark -P convert_utf8_to_utf16le+ -F ../unicode_lipsum/lipsum/Arabic-Lipsum.utf8.txt
+```
+
+You can also run the benchmark over several files at once:
+
+```
+ ./build/benchmarks/benchmark -P convert_utf8_to_utf16le+ -F ../unicode_lipsum/lipsum/*-Lipsum.utf8.txt
+```
+
 
 Since ICU is so common and popular, we assume that you may have it already on your system. When
 it is not found, it is simply omitted from the benchmarks. Thus, to benchmark against ICU, make
@@ -2722,11 +2993,117 @@ To run short benchmarks on various SIMDUTF functions with incremental input size
 This will benchmark the selected function on the input file, testing sizes from 1 byte up to the specified max size (default 128), and output a table with timing and performance metrics.
 
 
+## Compiling without the C++ standard library
+
+*This is currently experimental.*
+
+The simdutf library can be compiled without linking against the C++ standard library. This is useful when targeting bare-metal or highly constrained environments where the standard library is unavailable or undesirable. It might be useful when linking against the simdutf library from other languages such as C or Zig.
+
+It is only supported on GCC and LLVM/clang. We do not support this functionality under Visual Studio. When compiling the simdutf library yourself, set the `SIMDUTF_NO_LIBCXX` macro to 1. E.g., you might do:
+
+```
+c++ -c simdutf.cpp  -nostdlib++ -fno-rtti -fno-exceptions -DSIMDUTF_NO_LIBCXX=1 -std=c++17
+```
+
+When `SIMDUTF_NO_LIBCXX` is active:
+
+- `SIMDUTF_USE_STATIC_INITIALIZATION` is automatically set to `1` (see the section on [SIMDUTF\_USE\_STATIC\_INITIALIZATION](#simdutf_use_static_initialization)), since thread-safe function-local statics depend on the standard library. Importantly, it means that you should be careful if you are using the simdutf library in a static context (before the `main()` function is called).
+- Weak stub implementations of `__cxa_pure_virtual` and `__glibcxx_assert_fail` are compiled in so that the abstract-class vtable machinery does not pull in libstdc++/libc++abi. A real definition from the runtime will take priority if one is linked in.
+
+
+## C API (C11 or better)
+
+*This is currently experimental. We are committed to maintaining the C API but there might be issues with
+our implementation.*
+
+We provide a thin C API that wraps the C++ `simdutf` library. It is intended
+for applications that prefer or require a plain C interface. The `simdutf_c.h`
+defines the interface.
+
+The C API exposes functions for validation, transcoding, size estimation, `find` helpers,
+and Base64 encode/decode helpers. Results are returned using the `simdutf_result` struct
+which contains an `error_code` field and additional fields when relevant.
+
+We provide a simple C demo using the C wrapper at `amalgamation_demo.c`.
+It shows validating UTF-8, converting UTF-8 to UTF-16LE and back, and checking the round-trip.
+Refer to `singleheader/README.md` for instructions.
+
+
+You need the files `simdutf.cpp`, `simdutf_c.h`, `simdutf.h` provided with each release.
+
+As an example, given the following C program in the file `demo.c`...
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "simdutf_c.h"
+
+int main(void) {
+  printf("SIMDUTF C API demo\n");
+  const char *source = "1234";
+  /* validate UTF-8 */
+  if (!simdutf_validate_utf8(source, 4)) {
+    puts("invalid UTF-8");
+    return EXIT_FAILURE;
+  }
+}
+```
+
+You may build it as follows.
+
+```
+c++ -c simdutf.cpp -std=c++17
+cc -c amalgamation_demo.c
+c++  amalgamation_demo.o simdutf.o -o cdemo
+./cdemo
+```
+
+
+
+By default, the simdutf library requires a C++ standard library (e.g., libstdc++, libc++) at runtime, either statically or dynamically linked. If you want to avoid linking against the C++ standard library entirely, you need to set the `DSIMDUTF_NO_LIBCXX` macro to 1, see [Compiling without the C++ standard library](#compiling-without-the-c-standard-library).
+
+
+You might be able to build our small C program like so:
+
+```
+c++ -c simdutf.cpp  -nostdlib++ -fno-rtti -fno-exceptions -DSIMDUTF_NO_LIBCXX=1 -std=c++17
+cc demo.c simdutf.o -o demo
+```
+
+
+The resulting program `demo` does not depend on the C++ standard library. If you opt for this option, be aware that the downside is that you should be careful when using simdutf in the static context (before the `main` function has been called).
+
+
+Note: The C API is currently not aware of amalgamation with limited features. It expects the full simdutf library.
+
+
+## SIMDUTF_USE_STATIC_INITIALIZATION
+
+*This is currently experimental.*
+
+By default, simdutf avoids translation-unit-scope (global) static variables for its implementation singletons. Instead, it relies on function-local statics, which are initialized in a thread-safe manner by the C++ runtime. This means the very first call to the library — even before `main()` starts — is safe and will not cause crashes.
+
+If you need to avoid the small synchronization overhead associated with function-local statics (checked on every call until initialization completes), you can opt in to translation-unit-scope static initialization:
+
+```cmake
+cmake -DSIMDUTF_USE_STATIC_INITIALIZATION=ON ...
+```
+
+Or define the macro directly if you build simdutf yourself (`SIMDUTF_USE_STATIC_INITIALIZATION=1`).
+
+**Trade-off:** with this option enabled, simdutf's implementation objects are initialized as translation-unit-scope globals. The C++ standard does not guarantee a deterministic initialization order across translation units, so if your own global variables call into simdutf during their construction (i.e., before `main()` begins), you may encounter a crash due to the static initialization order fiasco. Do not enable this option if simdutf might be used from another library's global constructor.
+
+When building without the C++ standard library (`SIMDUTF_NO_LIBCXX=1`), static initialization is always used because the C++ runtime's thread-safe function-local static initialization relies on the standard library.
+
+
+*Further reading*: [Static Initialization Order Fiasco](https://en.cppreference.com/cpp/language/siof)
+
 ## Thread safety
 
 We built simdutf with thread safety in mind. The simdutf library is single-threaded throughout.
-The CPU detection, which runs the first time parsing is attempted and switches to the fastest parser for your CPU, is transparent and thread-safe. Our runtime dispatching is based on global objects that are instantiated at the beginning of the main thread and may be discarded at the end of the main thread. If you have multiple threads running and some threads use the library while the main thread is cleaning up resources, you may encounter issues. If you expect such problems, you may consider using [std::quick_exit](https://en.cppreference.com/w/cpp/utility/program/quick_exit).
-
+The CPU detection, which runs the first time parsing is attempted and switches to the fastest parser for your CPU, is transparent and thread-safe. Our runtime dispatching is based on global objects that are instantiated on first use and may be discarded at the end of the main thread. If you have multiple threads running and some threads use the library while the main thread is cleaning up resources, you may encounter issues. If you expect such problems, you may consider using [std::quick_exit](https://en.cppreference.com/w/cpp/utility/program/quick_exit).
 
 ## References
 
@@ -2749,27 +3126,6 @@ If you use this library in your research, please cite our work:
   note={\url{https://github.com/simdutf/simdutf}}
 }
 ```
-
-## C wrapper (C11 or better)
-
-*This is currently experimental. We are committed to maintaining the C API but there might be issues with
-our implementation.*
-
-We provide a thin C API that wraps the C++ `simdutf` library. It is intended
-for applications that prefer or require a plain C interface. The `simdutf_c.h`
-defines the interface.
-
-The C API exposes functions for validation, transcoding, size estimation, `find` helpers,
-and Base64 encode/decode helpers. Results are returned using the `simdutf_result` struct
-which contains an `error_code` field and additional fields when relevant.
-
-We provide a simple C demo using the C wrapper at `amalgamation_demo.c`.
-It shows validating UTF-8, converting UTF-8 to UTF-16LE and back, and checking the round-trip.
-Refer to `singleheader/README.md` for instructions. Note that the simdutf library requires
-a C++ standard library (e.g., libstdc++, libc++) at runtime, either statically or dynamically linked.
-
-Note: The C API is currently not aware of amalgamation with limited features. It expects the full simdutf library.
-
 
 ## Stars
 

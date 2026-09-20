@@ -204,34 +204,11 @@ TEST(compile_time_binary_to_base64_char) {
   static_assert(expected == encoded);
 }
 
-namespace {
-// this is just to demo that it is possible to do _base64 literals.
-template <std::size_t N> struct Base64LiteralHelper {
-  char storage[N - 1];
-
-  static constexpr std::size_t size() noexcept { return N - 1; }
-
-  constexpr Base64LiteralHelper(const char (&str)[N]) {
-    static_assert(N > 1, "weird size");
-    std::copy(str, str + size(), storage);
-  }
-};
-
-template <Base64LiteralHelper a> constexpr auto operator""_base64() {
-  using namespace simdutf::tests::helpers;
-  constexpr auto N = a.size();
-  constexpr std::span data(a.storage);
-  constexpr CTString<char, N> tmp(data);
-  return b64_to_binary<tmp>().template as_array<std::uint8_t>();
-}
-
-} // namespace
-
-TEST(compile_time_base64_literal_demo) {
-  using namespace simdutf::tests::helpers;
+TEST(compile_time_base64_literal) {
+  using namespace simdutf::literals;
 
   constexpr std::array decoded = "QWJyYWNhZGFicmEh"_base64;
-  const auto readable = std::string(begin(decoded), end(decoded));
+  const auto readable = std::string(decoded.data(), decoded.size());
   ASSERT_EQUAL(readable, "Abracadabra!");
 
   static_assert(decoded.size() == 12);
@@ -247,6 +224,34 @@ TEST(compile_time_base64_literal_demo) {
   static_assert(decoded[9] == 'r');
   static_assert(decoded[10] == 'a');
   static_assert(decoded[11] == '!');
+}
+
+TEST(compile_time_base64_literal_with_spaces) {
+  using namespace simdutf::literals;
+
+  constexpr auto decoded = "  QWJy  YWNhZGFicmEh  "_base64;
+  const auto readable = std::string(decoded.data(), decoded.size());
+  ASSERT_EQUAL(readable, "Abracadabra!");
+  static_assert(decoded.size() == 12);
+}
+
+TEST(compile_time_base64_literal_with_newlines) {
+  using namespace simdutf::literals;
+
+  constexpr auto decoded = R"(  QWJy  YWNhZGFi
+
+
+cmEh  )"_base64;
+  const auto readable = std::string(decoded.data(), decoded.size());
+  ASSERT_EQUAL(readable, "Abracadabra!");
+  static_assert(decoded.size() == 12);
+}
+
+TEST(compile_time_base64_literal_empty) {
+  using namespace simdutf::literals;
+
+  constexpr auto decoded = ""_base64;
+  static_assert(decoded.size() == 0);
 }
 
 namespace {
@@ -377,6 +382,122 @@ TEST(compile_time_base64_to_binary_safe) {
     constexpr auto base64 = u"   QWJyYWNhZGF icmEh   "_utf16;
     constexpr auto binary_again = b64_to_binary_safe<base64>();
     static_assert(binary_again == binary);
+  }
+}
+
+namespace {
+
+// Of course, you don't really need base64_to_binary_details at compile time,
+// but this is just to show that it is possible.
+template <auto input, simdutf::last_chunk_handling_options last_chunk_options =
+                          simdutf::last_chunk_handling_options::loose>
+  requires simdutf::tests::helpers::any_ctstring<decltype(input)>
+constexpr auto b64_to_bin_details_impl() {
+  using namespace simdutf::tests::helpers;
+  constexpr auto Nmax = simdutf::maximal_binary_length_from_base64(input);
+  CTString<char, Nmax> buffer{};
+  auto r = simdutf::base64_to_binary_details(
+      input, buffer, simdutf::base64_default, last_chunk_options);
+  return std::tuple(r.error, r.input_count, buffer, r.output_count);
+}
+
+template <auto input, simdutf::last_chunk_handling_options last_chunk_options =
+                          simdutf::last_chunk_handling_options::loose>
+  requires simdutf::tests::helpers::any_ctstring<decltype(input)>
+constexpr auto b64_to_binary_details() {
+  constexpr auto r = b64_to_bin_details_impl<input, last_chunk_options>();
+  constexpr auto error = std::get<0>(r);
+  static_assert(error == simdutf::error_code::SUCCESS);
+  constexpr auto ret = std::get<2>(r);
+  constexpr auto outlen = std::get<3>(r);
+  static_assert(ret.size() >= outlen);
+  if constexpr (ret.size() != outlen) {
+    return ret.template shrink<outlen>();
+  } else {
+    return ret;
+  }
+}
+
+} // namespace
+
+TEST(compile_time_base64_to_binary_details) {
+  using namespace simdutf::tests::helpers;
+  constexpr auto binary = "Abracadabra!"_latin1;
+  static_assert(binary.size() == 12);
+
+  {
+    constexpr auto base64 = "QWJyYWNhZGFicmEh"_latin1;
+    constexpr auto binary_again = b64_to_binary_details<base64>();
+    static_assert(binary_again == binary);
+  }
+
+  {
+    constexpr auto base64 = "   QWJyYWNhZGF icmEh   "_latin1;
+    constexpr auto binary_again = b64_to_binary_details<base64>();
+    static_assert(binary_again == binary);
+  }
+
+  {
+    constexpr auto base64 = u"QWJyYWNhZGFicmEh"_utf16;
+    constexpr auto binary_again = b64_to_binary_details<base64>();
+    static_assert(binary_again == binary);
+  }
+
+  {
+    constexpr auto base64 = u"   QWJyYWNhZGF icmEh   "_utf16;
+    constexpr auto binary_again = b64_to_binary_details<base64>();
+    static_assert(binary_again == binary);
+  }
+}
+
+TEST(compile_time_base64_to_binary_details_stop_before_partial) {
+  using namespace simdutf::tests::helpers;
+  constexpr auto expected = "Abr"_latin1; // "QWJy" -> "Abr"
+
+  // "QWJy YQ": 4 complete + 2 incomplete base64 chars (with space).
+  // stop_before_partial should decode only the first complete group.
+  {
+    constexpr auto base64 = "QWJy YQ"_latin1;
+    constexpr auto r = b64_to_bin_details_impl<
+        base64, simdutf::last_chunk_handling_options::stop_before_partial>();
+    static_assert(std::get<0>(r) == simdutf::error_code::SUCCESS);
+    // input_count should be less than the full input length
+    static_assert(std::get<1>(r) < base64.size());
+    static_assert(std::get<3>(r) == expected.size());
+  }
+
+  // Complete input: stop_before_partial consumes everything.
+  {
+    constexpr auto base64 = "QWJyYWNhZGFicmEh"_latin1;
+    constexpr auto binary = "Abracadabra!"_latin1;
+    constexpr auto binary_again = b64_to_binary_details<
+        base64, simdutf::last_chunk_handling_options::stop_before_partial>();
+    static_assert(binary_again == binary);
+  }
+}
+
+TEST(compile_time_base64_to_binary_details_invalid_character) {
+  using namespace simdutf::tests::helpers;
+
+  // '!' at position 4 is invalid
+  {
+    constexpr auto base64 = "QWJy!!!"_latin1;
+    constexpr auto r = b64_to_bin_details_impl<base64>();
+    static_assert(std::get<0>(r) ==
+                  simdutf::error_code::INVALID_BASE64_CHARACTER);
+    static_assert(std::get<1>(r) == 4); // position of first '!'
+  }
+}
+
+TEST(compile_time_base64_to_binary_details_input_remainder) {
+  using namespace simdutf::tests::helpers;
+
+  // 5 base64 chars: 4 form a group, 1 remainder -> error
+  {
+    constexpr auto base64 = "QWJyY"_latin1;
+    constexpr auto r = b64_to_bin_details_impl<base64>();
+    static_assert(std::get<0>(r) ==
+                  simdutf::error_code::BASE64_INPUT_REMAINDER);
   }
 }
 
