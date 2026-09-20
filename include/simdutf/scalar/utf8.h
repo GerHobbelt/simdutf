@@ -55,7 +55,7 @@ simdutf_constexpr23 simdutf_warn_unused bool validate(BytePtr data,
       }
       // range check
       code_point = (byte & 0b00011111) << 6 | (data[pos + 1] & 0b00111111);
-      if ((code_point < 0x80) || (0x7ff < code_point)) {
+      if (code_point < 0x80) {
         return false;
       }
     } else if ((byte & 0b11110000) == 0b11100000) {
@@ -73,7 +73,7 @@ simdutf_constexpr23 simdutf_warn_unused bool validate(BytePtr data,
       code_point = (byte & 0b00001111) << 12 |
                    (data[pos + 1] & 0b00111111) << 6 |
                    (data[pos + 2] & 0b00111111);
-      if ((code_point < 0x800) || (0xffff < code_point) ||
+      if ((code_point < 0x800) ||
           (0xd7ff < code_point && code_point < 0xe000)) {
         return false;
       }
@@ -154,7 +154,7 @@ validate_with_errors(BytePtr data, size_t len) noexcept {
       }
       // range check
       code_point = (byte & 0b00011111) << 6 | (data[pos + 1] & 0b00111111);
-      if ((code_point < 0x80) || (0x7ff < code_point)) {
+      if (code_point < 0x80) {
         return result(error_code::OVERLONG, pos);
       }
     } else if ((byte & 0b11110000) == 0b11100000) {
@@ -172,7 +172,7 @@ validate_with_errors(BytePtr data, size_t len) noexcept {
       code_point = (byte & 0b00001111) << 12 |
                    (data[pos + 1] & 0b00111111) << 6 |
                    (data[pos + 2] & 0b00111111);
-      if ((code_point < 0x800) || (0xffff < code_point)) {
+      if (code_point < 0x800) {
         return result(error_code::OVERLONG, pos);
       }
       if (0xd7ff < code_point && code_point < 0xe000) {
@@ -224,7 +224,8 @@ validate_with_errors(const char *buf, size_t len) noexcept {
 // errors from there Used to pinpoint the location of an error when an invalid
 // chunk is detected We assume that the stream starts with a leading byte, and
 // to check that it is the case, we ask that you pass a pointer to the start of
-// the stream (start).
+// the stream (start). Note that the resulting count is underflowed if an error
+// is encountered in the rewinded segment.
 inline simdutf_warn_unused result rewind_and_validate_with_errors(
     const char *start, const char *buf, size_t len) noexcept {
   // First check that we start with a leading byte
@@ -244,7 +245,7 @@ inline simdutf_warn_unused result rewind_and_validate_with_errors(
   }
 
   result res = validate_with_errors(buf, len + extra_len);
-  res.count -= extra_len;
+  res.count -= extra_len; // Might underflow
   return res;
 }
 
