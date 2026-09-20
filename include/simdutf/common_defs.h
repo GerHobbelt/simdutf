@@ -7,6 +7,7 @@
 // Sometimes logging is useful, but we want it disabled by default
 // and free of any logging code in release builds.
 #ifdef SIMDUTF_LOGGING
+  #include <cstdlib>
   #include <iostream>
   #define simdutf_log(msg)                                                     \
     std::cout << "[" << __FUNCTION__ << "]: " << msg << std::endl              \

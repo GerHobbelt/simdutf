@@ -31,35 +31,32 @@
  */
 inline uint8x16_t insert_line_feed16(uint8x16_t input, size_t K) {
   static const uint8_t shuffle_masks[16][16] = {
-      {0x80, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14},
-      {0, 0x80, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14},
-      {0, 1, 0x80, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14},
-      {0, 1, 2, 0x80, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14},
-      {0, 1, 2, 3, 0x80, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14},
-      {0, 1, 2, 3, 4, 0x80, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14},
-      {0, 1, 2, 3, 4, 5, 0x80, 6, 7, 8, 9, 10, 11, 12, 13, 14},
-      {0, 1, 2, 3, 4, 5, 6, 0x80, 7, 8, 9, 10, 11, 12, 13, 14},
-      {0, 1, 2, 3, 4, 5, 6, 7, 0x80, 8, 9, 10, 11, 12, 13, 14},
-      {0, 1, 2, 3, 4, 5, 6, 7, 8, 0x80, 9, 10, 11, 12, 13, 14},
-      {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0x80, 10, 11, 12, 13, 14},
-      {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 0x80, 11, 12, 13, 14},
-      {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 0x80, 12, 13, 14},
-      {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 0x80, 13, 14},
-      {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 0x80, 14},
-      {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 0x80}};
-  // Prepare a vector with '\n' (0x0A)
-  uint8x16_t line_feed_vector = vdupq_n_u8('\n');
+      {15, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14},
+      {0, 15, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14},
+      {0, 1, 15, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14},
+      {0, 1, 2, 15, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14},
+      {0, 1, 2, 3, 15, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14},
+      {0, 1, 2, 3, 4, 15, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14},
+      {0, 1, 2, 3, 4, 5, 15, 6, 7, 8, 9, 10, 11, 12, 13, 14},
+      {0, 1, 2, 3, 4, 5, 6, 15, 7, 8, 9, 10, 11, 12, 13, 14},
+      {0, 1, 2, 3, 4, 5, 6, 7, 15, 8, 9, 10, 11, 12, 13, 14},
+      {0, 1, 2, 3, 4, 5, 6, 7, 8, 15, 9, 10, 11, 12, 13, 14},
+      {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 15, 10, 11, 12, 13, 14},
+      {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 11, 12, 13, 14},
+      {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 15, 12, 13, 14},
+      {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 15, 13, 14},
+      {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, 14},
+      {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}};
+  // Add '\n' (0x0A) at the end of input vector
+  uint8x16_t input_with_line_feed_vector = vsetq_lane_u8('\n', input, 15);
 
   // Load the precomputed shuffle mask for K
   uint8x16_t mask = vld1q_u8(shuffle_masks[K]);
 
-  // Create a mask where 0x80 indicates the line feed position
-  uint8x16_t lf_pos = vceqq_u8(mask, vdupq_n_u8(0x80));
+  // Perform the shuffle to reposition the K bytes including '\n'
+  uint8x16_t result = vqtbl1q_u8(input_with_line_feed_vector, mask);
 
-  uint8x16_t result = vqtbl1q_u8(input, mask);
-
-  // Use vbsl to select '\n' where lf_pos is true, else keep input bytes
-  return vbslq_u8(lf_pos, line_feed_vector, result);
+  return result;
 }
 
 // offset is the number of characters in the current line.
@@ -123,31 +120,20 @@ size_t encode_base64_impl(char *dst, const char *src, size_t srclen,
   }
   // credit: Wojciech Muła
   uint8_t *out = (uint8_t *)dst;
-  constexpr static uint8_t source_table[64] = {
-      'A', 'Q', 'g', 'w', 'B', 'R', 'h', 'x', 'C', 'S', 'i', 'y', 'D',
-      'T', 'j', 'z', 'E', 'U', 'k', '0', 'F', 'V', 'l', '1', 'G', 'W',
-      'm', '2', 'H', 'X', 'n', '3', 'I', 'Y', 'o', '4', 'J', 'Z', 'p',
-      '5', 'K', 'a', 'q', '6', 'L', 'b', 'r', '7', 'M', 'c', 's', '8',
-      'N', 'd', 't', '9', 'O', 'e', 'u', '+', 'P', 'f', 'v', '/',
-  };
-  constexpr static uint8_t source_table_url[64] = {
-      'A', 'Q', 'g', 'w', 'B', 'R', 'h', 'x', 'C', 'S', 'i', 'y', 'D',
-      'T', 'j', 'z', 'E', 'U', 'k', '0', 'F', 'V', 'l', '1', 'G', 'W',
-      'm', '2', 'H', 'X', 'n', '3', 'I', 'Y', 'o', '4', 'J', 'Z', 'p',
-      '5', 'K', 'a', 'q', '6', 'L', 'b', 'r', '7', 'M', 'c', 's', '8',
-      'N', 'd', 't', '9', 'O', 'e', 'u', '-', 'P', 'f', 'v', '_',
-  };
   const uint8x16_t v3f = vdupq_n_u8(0x3f);
 #ifdef SIMDUTF_REGULAR_VISUAL_STUDIO
   // When trying to load a uint8_t array, Visual Studio might
   // error with: error C2664: '__n128x4 neon_ld4m_q8(const char *)':
   // cannot convert argument 1 from 'const uint8_t [64]' to 'const char *
-  const uint8x16x4_t table = vld4q_u8(
-      (reinterpret_cast<const char *>(options & base64_url) ? source_table_url
-                                                            : source_table));
+  const uint8x16x4_t table =
+      vld1q_u8_x4((reinterpret_cast<const char *>(options & base64_url)
+                       ? tables::base64::base64_url::e1
+                       : tables::base64::base64_default::e1));
 #else
   const uint8x16x4_t table =
-      vld4q_u8((options & base64_url) ? source_table_url : source_table);
+      vld1q_u8_x4(reinterpret_cast<const unsigned char *>(
+          (options & base64_url) ? tables::base64::base64_url::e1
+                                 : tables::base64::base64_default::e1));
 #endif
   size_t i = 0;
   for (; i + 16 * 3 <= srclen; i += 16 * 3) {
