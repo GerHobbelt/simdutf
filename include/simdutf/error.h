@@ -123,5 +123,53 @@ struct full_result {
   }
 };
 
+struct utf8_result {
+  error_code error;
+  size_t input_count;
+  size_t continuation_count;
+  size_t four_byte_count;
+
+  simdutf_really_inline simdutf_constexpr23 utf8_result() noexcept
+      : error{error_code::SUCCESS}, input_count{0}, continuation_count{0},
+        four_byte_count{0} {}
+
+  simdutf_really_inline simdutf_constexpr23
+  utf8_result(error_code err, size_t pos_in, size_t continuation_count_,
+              size_t four_byte_count_) noexcept
+      : error{err}, input_count{pos_in},
+        continuation_count{continuation_count_},
+        four_byte_count{four_byte_count_} {}
+
+  simdutf_really_inline simdutf_constexpr23 size_t
+  utf16_length() const noexcept {
+    return input_count - continuation_count + four_byte_count;
+  }
+
+  // The number of code points in the valid prefix, which is also the number of
+  // UTF-32 code units.
+  simdutf_really_inline simdutf_constexpr23 size_t
+  utf32_length() const noexcept {
+    return input_count - continuation_count;
+  }
+};
+
+// UTF-16 size of a possibly ill-formed UTF-8 string, plus the first few
+// ill-formed subsequences. Pass this to convert_utf8_to_utf16_with_replacement
+// on the same bytes. error_offset entries are byte indexes from the start of
+// that input. count is always the full number of char16_t. more_errors is
+// true when the input has ill-formed subsequences past the stored ones.
+struct utf8_to_utf16_result {
+  static constexpr size_t max_errors = 16;
+  error_code error;
+  size_t count;
+  size_t error_count;
+  bool more_errors;
+  size_t error_offset[max_errors];
+
+  simdutf_really_inline simdutf_constexpr23 utf8_to_utf16_result() noexcept
+      : error{error_code::SUCCESS}, count{0}, error_count{0},
+        more_errors{false}, error_offset{} {}
+};
+
 } // namespace simdutf
 #endif
